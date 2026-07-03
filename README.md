@@ -74,10 +74,10 @@ agent 会按 `SKILL.md` 的 0–12 步工作流执行：询问需求 → 抓包 
 
 本 skill 的通用骨架提炼自以下 2api 项目（致谢）：
 
-- [promptql2api](https://github.com/) — Python+FastAPI，IREvent 架构 + 注册机（首选模板）
-- grok2api — 真流式 tool call 状态机、错误分类换号、多模态上传
-- gpt2api — `<call>` prompt tool 协议、CJK token 估算、Sentinel POW
-- cursor2api — 流式 warmup/guard 双缓冲、上下文压力治理
+- [promptql2api](https://github.com/69gg/promptql2api) — Python+FastAPI，IREvent 架构 + 注册机（首选模板）
+- [grok2api](https://github.com/69gg/grok2api) — 真流式 tool call 状态机、错误分类换号、多模态上传
+- [gpt2api](https://github.com/69gg/gpt2api) — `<call>` prompt tool 协议、CJK token 估算、Sentinel POW
+- [cursor2api](https://github.com/7836246/cursor2api) — 流式 warmup/guard 双缓冲、上下文压力治理
 
 ## 贡献
 
