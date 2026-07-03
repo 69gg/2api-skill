@@ -2,9 +2,25 @@
 
 > 本节是 skill 的强制约定（详见 SKILL.md 第 2 节）。
 
-## 一、命名
+## 一、命名与目录策略
 
 生成的项目默认命名 **`<平台>2api`**（如 `grok2api`、`promptql2api`、`chathub2api`），除非用户指定别的名字。用 `scripts/copy_skeleton.py --platform <平台>` 替换占位。
+
+目录策略（AI 自动选择，默认直接复制）：
+
+- 若目标目录为空（`.git` 除外），骨架**直接复制到该目录**。
+- 若目标目录非空，自动在其下新建 **`<平台>2api`** 子目录并复制到子目录。
+- 若目标目录及其 `<平台>2api` 子目录均非空，则中止并提示用户选择新目录，避免覆盖。
+
+调用方式：
+
+```bash
+# 默认当前目录；空则直写，非空则建 grok2api/ 子目录
+python scripts/copy_skeleton.py --platform grok
+
+# 显式指定目标父目录
+python scripts/copy_skeleton.py --platform grok --dest ~/projects
+```
 
 ## 二、README 致谢
 

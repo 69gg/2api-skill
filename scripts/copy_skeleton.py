@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
 """把 2api-skill 的通用骨架复制到目标项目目录，并替换占位。
 
+目录策略（AI 自动选择）：
+- 若目标目录为空（仅 .git 除外），直接复制到该目录（默认行为）。
+- 若目标目录非空，自动在其下新建 <平台>2api 子目录并复制到子目录。
+
 用法：
-    python scripts/copy_skeleton.py --dest ~/proj/grok2api --platform grok
-    python scripts/copy_skeleton.py --dest ./foo2api --platform foo --account-dir accounts
+    python scripts/copy_skeleton.py --platform grok              # 当前目录为空则直接复制
+    python scripts/copy_skeleton.py --platform grok --dest ./    # 同上，显式指定当前目录
+    python scripts/copy_skeleton.py --platform foo --dest ~/proj # 非空则在 ~/proj/foo2api 生成
+    python scripts/copy_skeleton.py --platform foo --dest ./foo2api --account-dir accounts
 """
 from __future__ import annotations
 
@@ -49,9 +55,21 @@ def copy_items(src: Path, dest: Path) -> None:
             shutil.copy2(item, target)
 
 
+def resolve_dest(dest: Path, platform: str) -> Path:
+    """按「空则直接复制、非空则新建 <平台>2api 子目录」策略解析目标目录。"""
+    dest = dest.resolve()
+    if is_empty_except_git(dest):
+        return dest
+    sub = dest / f"{platform}2api"
+    if not is_empty_except_git(sub):
+        print(f"目标目录及其 {sub.name} 子目录均非空，已中止（避免覆盖）: {dest}", flush=True)
+        raise SystemExit(1)
+    return sub
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="复制 2api 通用骨架并替换占位。")
-    ap.add_argument("--dest", required=True, help="目标项目目录")
+    ap.add_argument("--dest", default=".", help="目标父目录（默认当前目录；空则直写，非空则建 <平台>2api 子目录）")
     ap.add_argument("--platform", required=True, help="平台名（如 grok；项目名将为 grok2api）")
     ap.add_argument("--account-dir", default="account", choices=["account", "accounts"],
                     help="账号凭据目录名（默认 account）")
@@ -59,16 +77,13 @@ def main() -> int:
 
     skill_root = Path(__file__).resolve().parent.parent
     src = skill_root / "assets" / "skeleton"
-    dest = Path(args.dest).resolve()
     if not src.is_dir():
         print(f"找不到骨架目录: {src}", flush=True)
         return 1
-    if not is_empty_except_git(dest):
-        print(f"目标目录非空（除 .git 外），已中止（避免覆盖）: {dest}", flush=True)
-        return 1
 
-    copy_items(src, dest)
     platform = args.platform
+    dest = resolve_dest(Path(args.dest), platform)
+    copy_items(src, dest)
     replacements: dict[str, str] = {
         "{{PROJECT_NAME}}": f"{platform}2api",
         "{{Platform}}": platform.capitalize(),
