@@ -34,6 +34,17 @@ class Settings(BaseModel):
     # 账号凭据目录（相对工作目录；account/<name>.json，gitignored）
     account_dir: str = "account"
 
+    # 自动补足账号（[registry] 段）
+    target_account_count: int = 0          # 0=关闭；>0 时服务启动后自动维持可用账号数
+    auto_register_interval: float = 300.0  # 检查间隔（秒）
+    auto_register_workers: int = 1         # 单次并发注册数
+
+    # 可恢复失效的冷却配置（[upstream] 段）
+    quota_exhausted_action: str = "cooldown"  # "cooldown" 或 "disable"；仅对 QUOTA_EXHAUSTED
+    cooldown_seconds: float = 600.0            # 默认冷却时长（秒）
+    cooldown_seconds_quota: float | None = None  # QUOTA_EXHAUSTED 覆盖值
+    cooldown_seconds_cf: float | None = None     # CF_CHALLENGE 覆盖值
+
     # 管理后台鉴权（/admin/*）；空=关闭 admin 端点（返回 404 隐藏存在）
     admin_auth_key: str = ""
 

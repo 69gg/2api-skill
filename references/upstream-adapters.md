@@ -15,11 +15,27 @@
 
 ## 二、认证范式（按目标站选其一）
 
-- **纯 cookie 回放**：`get_auth()` 返回 `{"Cookie": "..."}`；适合无 token 刷新的简单站点。
-- **JWT + 刷新**：缓存 token，到期前 `token_refresh_margin` 秒主动刷新；参考 promptql2api 的 `AuthManager`（`asyncio.Lock` 双重检查锁 + base64 解析 JWT exp）。
-- **OAuth refresh**：用 `refresh_token` 换 `access_token`；适合需要 OAuth 流程的站点（如 ChatGPT 系）。
+> **凭据生命周期优先**：抓包时尽量选择长期有效的凭据（refresh_token、长效 cookie、service account key）。若只能拿到短时效 token，必须在 `app/upstream/auth.py` 实现自动刷新，并用 `app/upstream/token_store.py` 的文件锁持久化，避免多 worker 刷新覆盖。
 
-`is_auth_failure` 默认按 HTTP 401/403 判定；可在 `app/deps.py:classify_failure` 按目标站补充 body 关键词（如 `EnrichToken`/`auth token` 字样）。
+- **纯 cookie 回放**：`get_auth()` 返回 `{"Cookie": "..."}`；适合无 token 刷新的简单站点。
+- **JWT + 刷新**：缓存 token，到期前 `token_refresh_margin` 秒主动刷新；参考 promptql2api 的 `AuthManager`（`asyncio.Lock` 双重检查锁 + base64 解析 JWT exp）。刷新后必须写回持久化（账号 json 或 `token_store`）。
+- **OAuth refresh**：用 `refresh_token` 换 `access_token`；适合需要 OAuth 流程的站点（如 ChatGPT 系、Supabase Auth）。
+
+```python
+# JWT + 刷新伪代码（get_auth 内）
+async def get_auth(self) -> dict[str, str]:
+    exp = _jwt_exp(self._account.access_token)
+    if exp - time.time() < self._settings.token_refresh_margin:
+        new_session = locked_refresh(
+            TOKEN_PATH,
+            lambda old: self._refresh(old["refresh_token"]),
+        )
+        self._account.access_token = new_session["access_token"]
+        # 可选写回 account/<name>.json
+    return {"Authorization": f"Bearer {self._account.access_token}"}
+```
+
+`is_auth_failure` 默认按 HTTP 401/403 判定；`AuthProvider.classify_failure` 可按目标站覆盖，处理额度耗尽、Pro 模型错误、visitor_id 校验失败等特殊状态码/ body。
 
 ## 三、上游请求与流式协议
 
@@ -47,8 +63,16 @@
 
 `app/upstream/models.py` 的 `MODEL_CATALOG` 必须实地探测后填入：
 
-1. 用 chrome-devtools 抓取上游的模型列表来源（如有 `/models` API 取响应；否则从网页的模型选择器 UI 按钮 `data-testid`/`data-*` 属性提取）。
-2. 喂给 `scripts/probe_catalog.py` 生成 `MODEL_CATALOG` 代码（含 `id/name/owner/upstream_id`），粘进 `app/upstream/models.py` 替换占位。
+1. 用 chrome-devtools 抓取上游的模型列表来源：
+   - 优先找 `/models` API 或动态模型接口；
+   - 若无，从网页模型选择器 UI 按钮 `data-testid`/`data-*` 属性提取；
+   - 若模型写死在前端 JS bundle，抓 bundle 文件。
+2. 喂给 `scripts/probe_catalog.py` 生成 `MODEL_CATALOG` 代码（含 `id/name/owner/upstream_id`），粘进 `app/upstream/models.py` 替换占位。支持三种来源：
+   ```bash
+   python scripts/probe_catalog.py --source models.json
+   python scripts/probe_catalog.py --source https://api.example.com/v1/models --source-type api
+   python scripts/probe_catalog.py --source dist/main.js --source-type bundle
+   ```
 3. `upstream_id_for` 把 catalog id 映射成上游真实模型标识（如 `llm_config_id`/上游 model name），供 `stream()` 用。
 
 ## 六、ToolCallStrategy 选型

@@ -81,7 +81,11 @@ license: MIT
 
 **第 2 步（抓包）**：用 `chrome-devtools` 连到用户已登录的浏览器 → `navigate_page` 到 webchat → `list_network_requests`（过滤 XHR/fetch）→ 在网页发一条对话 → 用 `get_network_request` 取关键的「发送消息」请求（通常是 POST，返回 SSE/JSON 流）→ 必要时 `evaluate_script` 取 `localStorage`/cookie/页面变量里的 token。详见 `references/capture-flow.md`。
 
-**第 3 步（验证凭据）**：把抓到的请求喂 `scripts/request_to_curl.py` 转成 curl，**本地用 curl 实跑验证**能拿到回复。识别凭据类型（cookie / JWT / Bearer / 会话 ID / 签名头）。成功后把凭据记到 `account/main.json`（字段由上游决定）。
+**第 3 步（验证凭据）—— 阻塞项**：把抓到的请求喂 `scripts/request_to_curl.py` 转成 curl，**本地用 curl 实跑验证**能拿到回复。识别凭据类型（cookie / JWT / Bearer / 会话 ID / 签名头）。成功后把凭据记到 `account/main.json`（字段由上游决定）。
+
+> **未通过 curl 本地验证的凭据，不要进入第 5 步写代码，更不要开注册机批量注册。** 只有单个账号能稳定拿到回复，才能确认凭据字段、协议、token 生命周期正确。
+>
+> 选择凭据时**优先长期有效**的：refresh_token、长效 cookie、service account key 等。若只能拿到短时效 token，必须在 `app/upstream/auth.py` 实现自动刷新，并用 `app/upstream/token_store.py` 的文件锁持久化。
 
 > 抓包理解上游协议时，优先用 `context7` 查上游相关库/协议文档确认正确用法，再下结论。
 
@@ -91,7 +95,7 @@ license: MIT
    - 若目标目录为空（`.git` 除外），直接复制骨架到该目录。
    - 若目标目录非空，自动在其下新建 `<平台>2api` 子目录，复制到子目录。
    - 若目标目录及其 `<平台>2api` 子目录均非空，**告知用户选择一个新目录**，不要擅自覆盖。
-2. 询问是否用 git。需要则 `scripts/git_init.sh --dir <项目> [--remote <url>]`（init + 分支 main + 标准 .gitignore + 约定式首提交）。
+2. 询问是否用 git。需要则 `scripts/git_init.sh --dir <项目> [--remote <url>]`（init + 分支 main + 标准 .gitignore + 约定式首提交）；骨架已带 `.gitignore`，不要手动 `git init` 后遗漏忽略配置。
 3. 用 `scripts/copy_skeleton.py --platform <平台> [--dest <目标父目录>]` 将骨架**逐文件复制**到实际目录并替换占位（项目名、上游模块名等）。该脚本仅复制文件，不会替换整个目标文件夹；`--dest` 省略或传 `.` 均表示当前目录。
 4. 复制后骨架即可 `uv sync` 运行（上游适配器是占位，需第 5 步填充）。
 
@@ -117,7 +121,8 @@ license: MIT
 
 告知用户「2api 服务段落告一段落」。**询问是否需要注册机**：
 - **不需要** → 收尾（确认文档/测试/提交），结束。
-- **需要** → 进入第 8–11 步。
+- **需要** → 先确认单个账号已通过 curl 验证并能稳定请求；否则退回第 3 步，不要直接批量注册。
+- 进入第 8–11 步。
 
 ## 9. 第 8–11 步：注册机
 
@@ -128,13 +133,15 @@ license: MIT
 - **第 10 步**：检查是否有人机验证：
   - **无** → 走**纯协议方式**（curl/httpx 复刻请求，最快最稳）。
   - **有** → 提供打码接口设置地址（`[captcha]` 段），走 semi（有头浏览器自动/手动点）/ cdp（连已开 debug chrome）/ api（打码服务）策略之一。
-- **第 11 步**：编写注册机代码（`registrar/`，骨架已给 cli/email_client/http_client，填 pipeline/captcha）。注册成功的账号**自动保存到 `account/` 目录**（单文件 json）。补文档与测试。
+- **第 11 步**：编写注册机代码（`registrar/`，骨架已给 cli/email_client/http_client，填 pipeline/captcha）。注册成功的账号**自动保存到 `account/` 目录**（单文件 json）。若需要服务运行时自动维持账号池数量，在 `config.toml [registry]` 中设置 `target_account_count > 0`。补文档与测试。
 
 ## 10. 第 12 步：测试运行与收尾
 
 询问用户是否需要**实际跑一次注册机**测试：
 - 需要 → 运行，修复错误，确认账号成功写入 `account/`。
 - 不需要 → 跳过。
+
+若启用了 `target_account_count`，启动网关后观察日志是否自动补足账号到目标数。
 
 最后：确认 `README`（含致谢）、测试、lint 全绿，做最终 commit（约定式）。
 
@@ -166,5 +173,6 @@ license: MIT
 - `references/registrar-protocol.md` — cf-temp-email API + 验证码正则 + captcha 三策略
 - `references/project-conventions.md` — 命名/致谢/git 忽略/config 分段/约定式提交/uv
 - `references/testing.md` — mock client 喂 IR + dependency_overrides + e2e
+- `references/supabase-auth.md` — Supabase Auth(OTP/JWT/refresh) + workspace 创建套路
 - `scripts/` — `copy_skeleton.py`、`request_to_curl.py`、`probe_catalog.py`、`e2e_smoke.py`、`git_init.sh`
 - `assets/skeleton/` — 通用 Python(FastAPI)+uv 骨架（`app/` 写全 + `app/upstream/` 占位 + `registrar/` + `tests/`）

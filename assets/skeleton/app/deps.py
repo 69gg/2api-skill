@@ -66,7 +66,11 @@ class _RetryingClient:
             async for ir in self._underlying.stream(*args, **kwargs):
                 yield ir
         except Exception as e:  # noqa: BLE001
-            reason = classify_failure(e)
+            # 优先让上游 AuthProvider 自己分类错误；未分类再回退通用逻辑
+            auth = getattr(self._underlying, "_auth", None)
+            reason = auth.classify_failure(e) if auth is not None else None
+            if reason is None:
+                reason = classify_failure(e)
             if reason is not None:
                 self._pool.mark_failed(self._account, reason)
                 raise HTTPException(

@@ -7,8 +7,9 @@ from __future__ import annotations
 
 import os
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 
 @dataclass
@@ -42,6 +43,7 @@ class RegistrarConfig:
     captcha: CaptchaConfig
     account_dir: Path
     config_path: str = ""
+    upstream: dict[str, Any] = field(default_factory=dict)
 
 
 def load_registrar_config(path: str | None = None) -> RegistrarConfig:
@@ -57,4 +59,7 @@ def load_registrar_config(path: str | None = None) -> RegistrarConfig:
     email = EmailConfig(**data.get("email", {}))
     captcha = CaptchaConfig(**data.get("captcha", {}))
     account_dir = Path(data.get("registry", {}).get("account_dir", "account"))
-    return RegistrarConfig(email=email, captcha=captcha, account_dir=account_dir, config_path=p)
+    upstream = data.get("upstream", {})
+    return RegistrarConfig(
+        email=email, captcha=captcha, account_dir=account_dir, config_path=p, upstream=upstream
+    )

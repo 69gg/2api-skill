@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import re
+import secrets
 import time
 from typing import Any
 
@@ -22,6 +23,9 @@ def create_email(
     name: str = "",
 ) -> dict[str, Any]:
     """管理员方式创建临时邮箱，返回 {address, jwt, address_id}。"""
+    if not name:
+        # 部分 cf-temp-email 部署对 name="" 返回 400，自动兜底一段随机 localpart
+        name = secrets.token_hex(8)
     headers = {"x-admin-auth": admin_auth}
     if custom_auth:
         headers["x-custom-auth"] = custom_auth

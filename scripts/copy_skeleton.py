@@ -107,8 +107,10 @@ def main() -> int:
     print(f"  cd {dest}")
     print("  uv sync --extra dev          # 装依赖（含测试）")
     print("  cp config.toml.example config.toml   # 编辑配置")
-    print("  # 把账号凭据放到 account/main.json")
+    print("  cp account/main.json.example account/main.json   # 账号凭据模板")
+    print("  # account/<name>.json 必填字段：name、source_email、created_at")
     print("  # 实现 app/upstream/（auth/client/parser/models），见 references/upstream-adapters.md")
+    print("  # 如需 git，运行：bash scripts/git_init.sh [远程仓库地址]")
     print("  uv run uvicorn app.main:app --port 8088")
     return 0
 

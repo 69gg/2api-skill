@@ -7,7 +7,7 @@ host = "0.0.0.0"
 port = 8088
 api_key = ""                 # 客户端访问 /v1 的 key（Authorization: Bearer <key>）；留空 = 无认证
 
-# ===== 上游：目标网站行为（主程序读）=====
+# ===== 上游：目标网站行为（主程序 + 注册机共享）=====
 [upstream]
 # 通用行为参数（与具体网站无关）
 request_timeout = 120.0      # 单次请求总超时（秒）
@@ -18,9 +18,23 @@ strategy = "prompt"          # tool 策略：prompt（注入解析，默认）/ 
 # 目标网站专属端点（按抓包结果填，见 references/upstream-adapters.md 与 capture-flow.md）
 chat_url = ""                # 上游「发送对话」端点
 
+# 可恢复失效（额度耗尽 / 人机验证）的冷却配置
+# "disable" 仅对 QUOTA_EXHAUSTED 生效：直接标记 disabled（适合月额度/永不过期额度）
+quota_exhausted_action = "cooldown"
+cooldown_seconds = 600.0               # 默认冷却时长（秒）
+# cooldown_seconds_quota = 3600.0      # QUOTA_EXHAUSTED 覆盖值（可选）
+# cooldown_seconds_cf = 300.0          # CF_CHALLENGE 覆盖值（可选）
+
+# 注册机原生透传 [upstream] 段，可直接在 registrar/pipeline.py 读取
+# supabase_url = "https://<project>.supabase.co"
+# supabase_anon_key = "<anon/public key from JS bundle>"
+
 # ===== 账号目录（主程序 + 注册机读）=====
 [registry]
-account_dir = "account"      # 账号凭据目录（account/<name>.json，已 gitignore）
+account_dir = "account"           # 账号凭据目录（account/<name>.json，已 gitignore）
+target_account_count = 0          # 0=关闭；>0 时服务运行时自动补足账号到目标数
+auto_register_interval = 300.0    # 自动补账号检查间隔（秒）
+auto_register_workers = 1         # 单次并发注册数
 
 # ===== 管理后台（主程序读）=====
 [admin]

@@ -13,7 +13,14 @@ from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from typing import Any, Literal
 
+from app.account import FailReason
 from app.events import IREvent
+
+# 默认的失效 body 关键词（可按目标站在 AuthProvider.classify_failure 中覆盖）。
+_AUTH_HINTS = ("unauthorized", "invalid token", "not authenticated", "login required")
+_BAN_HINTS = ("banned", "suspended", "disabled", "forbidden", "封禁", "封号")
+_QUOTA_HINTS = ("quota", "limit reached", "insufficient", "credit", "额度", "配额", "余额不足")
+_CF_HINTS = ("cloudflare", "captcha", "turnstile", "challenge", "验证码")
 
 
 class AuthProvider(ABC):
@@ -24,6 +31,34 @@ class AuthProvider(ABC):
     @abstractmethod
     def is_auth_failure(self, exc: BaseException) -> bool:
         """判断异常是否为账号认证失败（喂给 app.deps.classify_failure）。"""
+
+    def classify_failure(self, exc: BaseException) -> FailReason | None:
+        """把上游异常映射成 FailReason。
+
+        默认实现按 HTTP 状态码 + body 关键词分类；按目标站覆盖本方法即可自定义
+        （如 Superdesign 的额度耗尽、Pro 模型错误、visitor_id 校验失败等）。
+        返回 ``None`` 表示非账号级失效，deps 会回退到通用逻辑。
+        """
+        status: int | None = None
+        body = ""
+        import httpx
+
+        if isinstance(exc, httpx.HTTPStatusError):
+            status = exc.response.status_code
+            try:
+                body = exc.response.text.lower()
+            except Exception:  # noqa: BLE001
+                body = ""
+        text = f"{body} {str(exc).lower()}"
+        if status in (401, 403) or any(h in text for h in _AUTH_HINTS):
+            return FailReason.AUTH_FAILED
+        if status == 429 or any(h in text for h in _QUOTA_HINTS):
+            return FailReason.QUOTA_EXHAUSTED
+        if status == 451 or any(h in text for h in _CF_HINTS):
+            return FailReason.CF_CHALLENGE
+        if any(h in text for h in _BAN_HINTS):
+            return FailReason.BANNED
+        return None
 
 
 class UpstreamClient(ABC):

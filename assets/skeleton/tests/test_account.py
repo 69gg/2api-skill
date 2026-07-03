@@ -3,7 +3,19 @@ from __future__ import annotations
 
 import time
 
-from app.account import Account, AccountPool, FailReason
+from app.account import (
+    _COOLDOWN_SECONDS_MAP,
+    Account,
+    AccountPool,
+    FailReason,
+    set_cooldown_policy,
+)
+
+
+def _reset_cooldown_policy() -> None:
+    """每个修改冷却策略的测试前后重置为默认。"""
+    set_cooldown_policy("cooldown")
+    _COOLDOWN_SECONDS_MAP.clear()
 
 
 def _pool(tmp_path, *names):
@@ -33,6 +45,7 @@ def test_mark_failed_dead_disables(tmp_path):
 
 
 def test_mark_failed_quota_cooldown(tmp_path, monkeypatch):
+    _reset_cooldown_policy()
     pool, _ = _pool(tmp_path, "a", "b")
     a = next(x for x in pool.all() if x.name == "a")
     pool.mark_failed(a, FailReason.QUOTA_EXHAUSTED)
@@ -72,3 +85,43 @@ def test_extra_fields_allowed(tmp_path):
     acc = Account.from_file(d / "x.json")
     assert acc.cookie == "ck"  # type: ignore[attr-defined]
     assert acc.project_id == "p"  # type: ignore[attr-defined]
+
+
+def test_name_fallback_to_filename(tmp_path):
+    import json
+    d = tmp_path / "account"
+    d.mkdir()
+    (d / "main.json").write_text(json.dumps({"source_email": "a@b.com"}), encoding="utf-8")
+    acc = Account.from_file(d / "main.json")
+    assert acc.name == "main"
+    assert acc.source_email == "a@b.com"
+
+
+def test_quota_exhausted_disable_policy(tmp_path):
+    _reset_cooldown_policy()
+    set_cooldown_policy("disable")
+    pool, _ = _pool(tmp_path, "a")
+    a = pool.all()[0]
+    pool.mark_failed(a, FailReason.QUOTA_EXHAUSTED)
+    assert a.disabled is True
+    assert a.cooldown_until == 0
+    # 恢复默认策略，避免影响其他测试
+    _reset_cooldown_policy()
+
+
+def test_cooldown_seconds_per_reason(tmp_path):
+    _reset_cooldown_policy()
+    pool, _ = _pool(tmp_path, "a")
+    a = pool.all()[0]
+    now = time.time()
+    set_cooldown_policy(
+        "cooldown",
+        seconds_map={
+            FailReason.QUOTA_EXHAUSTED: 120.0,
+            FailReason.CF_CHALLENGE: 30.0,
+        },
+    )
+    pool.mark_failed(a, FailReason.QUOTA_EXHAUSTED)
+    assert a.disabled is False
+    assert 119.0 <= a.cooldown_until - now <= 121.0
+    _reset_cooldown_policy()

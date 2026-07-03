@@ -24,9 +24,12 @@ uv sync --extra registrar  # 含注册机（curl-cffi / playwright）
 
 # 2. 配置
 cp config.toml.example config.toml   # 编辑：填上游端点、是否要 api_key/admin key
-# 把账号凭据放到 account/main.json（见 account/main.json.example）
+cp account/main.json.example account/main.json   # 必填字段：name、source_email、created_at
 
-# 3. 运行
+# 3. 如需 git，运行初始化脚本（会自动写 .gitignore + 约定式首提交）
+# bash scripts/git_init.sh [远程仓库地址]
+
+# 4. 运行
 uv run uvicorn app.main:app --host 0.0.0.0 --port 8088
 ```
 
