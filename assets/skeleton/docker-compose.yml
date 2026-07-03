@@ -1,0 +1,10 @@
+services:
+  {{platform}}-2api:
+    build: .
+    container_name: {{platform}}-2api
+    ports:
+      - "8088:8088"
+    volumes:
+      - ./config.toml:/app/config.toml
+      - ./account:/app/account
+    restart: unless-stopped

@@ -1,0 +1,6 @@
+# OpenAI Codex 跨平台兼容入口（参考本机 pdf/jupyter skill 的同名文件结构）。
+# 让 OpenAI Codex 等支持该接口的 agent 也能识别并调用本 skill。
+interface:
+  display_name: "2api-skill"
+  short_description: "把网页聊天(webchat)逆向成本地 OpenAI/Anthropic 兼容 API（to api）"
+  default_prompt: "帮我把一个网页聊天（webchat）逆向成本地 OpenAI/Anthropic 兼容 API 服务（2api），包括抓包识别凭据、生成 /v1 与 /admin 接口、可选写注册机。"

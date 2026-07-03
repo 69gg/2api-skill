@@ -1,0 +1,43 @@
+# {{Platform}}2api 配置。复制为 config.toml 并填值（config.toml 已 gitignore，本文件传 git）。
+# 账号凭据不在此处，放 account/<name>.json（见 account/main.json.example 或运行注册机）。
+
+# ===== 网关（主程序读）=====
+[gateway]
+host = "0.0.0.0"
+port = 8088
+api_key = ""                 # 客户端访问 /v1 的 key（Authorization: Bearer <key>）；留空 = 无认证
+
+# ===== 上游：目标网站行为（主程序读）=====
+[upstream]
+# 通用行为参数（与具体网站无关）
+request_timeout = 120.0      # 单次请求总超时（秒）
+poll_interval = 1.2          # 轮询式上游的轮询间隔（秒）
+token_refresh_margin = 300   # 凭据到期前多少秒主动刷新
+tool_call_retries = 3        # prompt 模式被拒绝时换变体重试次数（0 = 不重试）
+strategy = "prompt"          # tool 策略：prompt（注入解析，默认）/ native（上游原生 function-calling 直通）
+# 目标网站专属端点（按抓包结果填，见 references/upstream-adapters.md 与 capture-flow.md）
+chat_url = ""                # 上游「发送对话」端点
+
+# ===== 账号目录（主程序 + 注册机读）=====
+[registry]
+account_dir = "account"      # 账号凭据目录（account/<name>.json，已 gitignore）
+
+# ===== 管理后台（主程序读）=====
+[admin]
+auth_key = ""                # /admin/* 鉴权（Authorization: Bearer <key> 或 ?auth_key=<key>）；留空 = 关闭 admin（404）
+
+# ===== 以下仅注册机使用（主程序不读）=====
+[email]                      # Cloudflare Temp Email: https://github.com/dreamhunter2333/cloudflare_temp_email
+base_url = "https://your-mail-service.example.com"
+admin_auth = ""              # 后台管理员密码（请求头 x-admin-auth）
+custom_auth = ""             # 站点访问密码（请求头 x-custom-auth，若服务端配置了访问密码才填）
+domain = "your-domain.com"   # 已绑定的收件域名（不带 @）
+poll_timeout = 120           # 等待验证邮件的最长秒数
+
+[captcha]                    # 人机验证求解策略
+method = "semi"              # semi（有头浏览器自动 / 手动点）/ cdp（连已开 debug chrome）/ api（打码服务）
+headless = false             # semi 策略：是否无头（多数站点无头过不了，建议 false）
+# proxy_url = ""             # 可选，注册机与 captcha solver 共用
+# cdp_endpoint = "http://localhost:9222"  # cdp 策略：已开 debug chrome 的 CDP 端点
+# api_provider = "capsolver"              # api 策略：打码服务（capsolver 等）
+# api_key = ""                            # api 策略：打码服务 key

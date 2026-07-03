@@ -1,0 +1,20 @@
+# 凭据与本地配置（勿提交）
+config.toml
+.env
+account/
+accounts/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+dist/
+build/
+
+# 临时
+/tmp/
+scripts/probe_out/
