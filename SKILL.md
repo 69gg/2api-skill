@@ -25,17 +25,17 @@ license: MIT
 - **多模态（图片/文件）**：依上游是否支持及上传方式（base64 内联 / 对象存储 presigned），不一定可实现。
 - 本 skill 针对的是 **webchat 类**逆向（浏览器里能聊天的网页），不是有公开 SDK 的官方 API。
 
-## 1. 前置：MCP 检查与容错（每次开工先做）
+## 1. 前置：工具能力检查（每次开工先做）
 
-本流程依赖两个 MCP server。**开工前先跑本 skill 目录下的 `scripts/check_mcp.sh`**：
+本流程依赖两组工具，**开工前先浏览你当前可用的工具列表**，确认以下能力是否存在：
 
-- **context7**（查上游/库文档与正确用法）：`context7:resolve-library-id` → `context7:get-docs`
-- **chrome-devtools**（连真实浏览器抓包、探测模型列表）：`chrome-devtools:navigate_page`、`list_network_requests`、`get_network_request`、`evaluate_script`、`click_element`、`take_snapshot`
+- **context7 / 文档查询**（查上游/库文档与正确用法）：例如 `context7:resolve-library-id`、`context7:query-docs` 或类似名称。若不可用，可降级为 `WebSearch` / `FetchURL`。
+- **chrome-devtools / 浏览器 DevTools**（连真实浏览器抓包、探测模型列表）：例如 `chrome-devtools:navigate_page`、`list_network_requests`、`get_network_request`、`evaluate_script`、`click_element`、`take_snapshot` 或类似名称。若不可用，可降级为让用户在浏览器 DevTools 手动抓 Network，把请求 JSON 喂给 `scripts/request_to_curl.py` 转 curl。
 
-> 具体工具名以你所在 agent 实际枚举为准（版本可能变动），下方为常见名。
+> 不同 agent 对工具命名/前缀不同，以你实际枚举到的为准；下文中统一用 `context7:*` 和 `chrome-devtools:*` 作为示意。
 
 **若任一缺失或不全**（这是常态，容错处理）：
-1. **教用户配**：在目标项目根写 `.mcp.json`（团队共享）或用户级 `~/.claude.json` 的 `mcpServers`，内容：
+1. **教用户配 MCP**（若你所在平台支持）：在目标项目根写 `.mcp.json`（团队共享）或用户级 `~/.claude.json` 的 `mcpServers`，内容：
    ```json
    {
      "mcpServers": {
@@ -45,7 +45,7 @@ license: MIT
    }
    ```
    写完**明确提示用户：需重启 agent（如 Claude Code）才生效**。其他 agent 平台参考各自 MCP 配置文档。
-2. **降级继续**：context7 不可用 → 用 WebSearch / 网页阅读查文档；chrome-devtools 不可用 → 让用户在浏览器 DevTools 手动抓 Network，把请求 JSON 喂给 `scripts/request_to_curl.py` 转 curl。
+2. **降级继续**：文档查询不可用 → 用 `WebSearch` / `FetchURL` 查文档；浏览器 DevTools 不可用 → 让用户在浏览器 DevTools 手动抓 Network，把请求 JSON 喂给 `scripts/request_to_curl.py` 转 curl。
 3. **权限反复弹**：提示用户把 `mcp__chrome-devtools__*`、`mcp__context7__*` 加入项目的 `.claude/settings.local.json` 的 `permissions.allow`。
 
 ## 2. 强制约定（必须执行，详见 `references/project-conventions.md`）
@@ -87,9 +87,10 @@ license: MIT
 
 ## 5. 第 4 步：git 与项目初始化
 
-1. 询问是否用 git。需要则 `scripts/git_init.sh --dir <项目> [--remote <url>]`（init + 分支 main + 标准 .gitignore + 约定式首提交）。
-2. 用 `scripts/copy_skeleton.py --dest <项目目录> --platform <平台> --upstream-module <python模块名>` 复制通用骨架并替换占位（项目名、上游模块名等）。
-3. 复制后骨架即可 `uv sync` 运行（上游适配器是占位，需第 5 步填充）。
+1. **先检查目标目录是否为空（`.git` 除外）**。若目标目录已存在且包含 `.git` 以外的文件/目录，**告知用户选择一个新目录**，不要擅自覆盖。
+2. 询问是否用 git。需要则 `scripts/git_init.sh --dir <项目> [--remote <url>]`（init + 分支 main + 标准 .gitignore + 约定式首提交）。
+3. 用 `scripts/copy_skeleton.py --dest <项目目录> --platform <平台>` 将骨架**逐文件复制**到目标目录并替换占位（项目名、上游模块名等）。该脚本仅复制文件，不会替换整个目标文件夹。
+4. 复制后骨架即可 `uv sync` 运行（上游适配器是占位，需第 5 步填充）。
 
 ## 6. 第 5 步：编写 2api 代码（分小步，边写边测）
 
@@ -162,5 +163,5 @@ license: MIT
 - `references/registrar-protocol.md` — cf-temp-email API + 验证码正则 + captcha 三策略
 - `references/project-conventions.md` — 命名/致谢/git 忽略/config 分段/约定式提交/uv
 - `references/testing.md` — mock client 喂 IR + dependency_overrides + e2e
-- `scripts/` — `check_mcp.sh`、`copy_skeleton.py`、`request_to_curl.py`、`probe_catalog.py`、`e2e_smoke.py`、`git_init.sh`
+- `scripts/` — `copy_skeleton.py`、`request_to_curl.py`、`probe_catalog.py`、`e2e_smoke.py`、`git_init.sh`
 - `assets/skeleton/` — 通用 Python(FastAPI)+uv 骨架（`app/` 写全 + `app/upstream/` 占位 + `registrar/` + `tests/`）

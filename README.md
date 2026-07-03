@@ -30,16 +30,16 @@ ln -s ~/projects/2api-skill ~/.claude/skills/2api-skill
 
 **OpenAI Codex / 其他支持 skill 的 agent**：通过本仓库的 `agents/openai.yaml` 接口识别；按各平台文档放置 skill 目录即可。
 
-## 依赖的 MCP
+## 依赖的工具
 
-流程用到两个 MCP server（首次使用前跑 `bash scripts/check_mcp.sh` 检测，缺失会有配置指引）：
+流程依赖两组工具，agent 开工前应先浏览自身可用工具列表确认：
 
-| MCP | 用途 | 安装命令 |
+| 工具组 | 用途 | 缺失时替代 |
 |---|---|---|
-| `context7` | 查上游/库文档与正确用法 | `npx -y @upstash/context7-mcp` |
-| `chrome-devtools` | 连真实浏览器抓包、探测模型 | `npx -y chrome-devtools-mcp@latest --autoConnect` |
+| `context7:*` 或类似文档查询工具 | 查上游/库文档与正确用法 | `WebSearch` / `FetchURL` |
+| `chrome-devtools:*` 或类似浏览器 DevTools 工具 | 连真实浏览器抓包、探测模型 | 让用户在浏览器 DevTools 手动抓 Network |
 
-MCP 缺失时 skill 可降级运行（见 `SKILL.md` 第 1 节）。
+需要时可在对应平台配置 MCP server（`context7`、`chrome-devtools`），配置后需重启 agent。详见 `SKILL.md` 第 1 节。
 
 ## 用法
 
@@ -56,7 +56,7 @@ agent 会按 `SKILL.md` 的 0–12 步工作流执行：询问需求 → 抓包 
 ├── SKILL.md                 # 主工作流（正文中文，≤500 行）
 ├── agents/openai.yaml       # Codex 等跨平台兼容入口
 ├── references/              # 11 篇方法论文档（按需阅读）
-├── scripts/                 # 辅助脚本（check_mcp / copy_skeleton / request_to_curl / probe_catalog / e2e_smoke / git_init）
+├── scripts/                 # 辅助脚本（copy_skeleton / request_to_curl / probe_catalog / e2e_smoke / git_init）
 └── assets/skeleton/         # 通用 Python(FastAPI)+uv 骨架（app/ 写全 + app/upstream/ 占位 + registrar/ + tests/）
 ```
 

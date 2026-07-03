@@ -27,6 +27,28 @@ def replace_in_tree(dest: Path, replacements: dict[str, str]) -> None:
             f.write_text(changed, encoding="utf-8")
 
 
+def is_empty_except_git(path: Path) -> bool:
+    """目标目录允许只包含 .git；其他任意文件/目录均视为非空。"""
+    if not path.exists():
+        return True
+    for child in path.iterdir():
+        if child.name == ".git":
+            continue
+        return False
+    return True
+
+
+def copy_items(src: Path, dest: Path) -> None:
+    """将 src 下的顶层文件/目录逐个复制到 dest，避免整体替换目标文件夹。"""
+    dest.mkdir(parents=True, exist_ok=True)
+    for item in src.iterdir():
+        target = dest / item.name
+        if item.is_dir():
+            shutil.copytree(item, target, dirs_exist_ok=True)
+        else:
+            shutil.copy2(item, target)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="复制 2api 通用骨架并替换占位。")
     ap.add_argument("--dest", required=True, help="目标项目目录")
@@ -41,11 +63,11 @@ def main() -> int:
     if not src.is_dir():
         print(f"找不到骨架目录: {src}", flush=True)
         return 1
-    if dest.exists() and any(dest.iterdir()):
-        print(f"目标目录非空，已中止（避免覆盖）: {dest}", flush=True)
+    if not is_empty_except_git(dest):
+        print(f"目标目录非空（除 .git 外），已中止（避免覆盖）: {dest}", flush=True)
         return 1
 
-    shutil.copytree(src, dest)
+    copy_items(src, dest)
     platform = args.platform
     replacements: dict[str, str] = {
         "{{PROJECT_NAME}}": f"{platform}2api",
