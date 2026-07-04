@@ -21,6 +21,7 @@ license: MIT
 
 **局限（开工前如实告知用户）**：
 - webchat 一般**不暴露原生 function-calling**：tool call 多靠 **prompt 注入 + 文本解析** 模拟（见 `references/tool-calls.md`），命中率取决于上游模型是否配合，复杂 system 身份场景可能识破失败。
+  - **强 system prompt / 身份对抗场景的 tool call 引导**：很多 webchat 平台给模型灌了很强的内置身份（如 Cursor 的文档助手、PromptQL 的 data/query assistant），直接命令它“输出 `<tool_call>` / ```` ```json action ````”会被识破为 prompt injection 并拒绝。此时不要硬刚，参考 Cursor / PromptQL 等同类 2api 项目积累的工程经验，采用六层策略叠加命中率：认知重构、system 软化包装、多角度拒绝检测重试、多样化 few-shot、鲁棒解析兜底、清洗冲突指令与历史拒绝痕迹。详见 `references/tool-calls.md` 第六章。具体实现落地到 `app/upstream/tools.py` / `app/upstream/parser.py`。这些策略的命中率仍受上游模型和身份对抗强度限制，复杂场景下**不要承诺 100% tool call 命中**。
 - **人机验证（captcha/turnstile）**：能协议化最好；不能则需浏览器 + 打码服务或人工，**无法保证全自动**。
 - **多模态（图片/文件）**：依上游是否支持及上传方式（base64 内联 / 对象存储 presigned），不一定可实现。
 - 本 skill 针对的是 **webchat 类**逆向（浏览器里能聊天的网页），不是有公开 SDK 的官方 API。
