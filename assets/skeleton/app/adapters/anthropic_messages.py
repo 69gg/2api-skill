@@ -73,14 +73,22 @@ async def _collect(client: Any, prompt: str, tools: list[ToolDef],
     return "".join(parts), "".join(thinking_parts), usages
 
 
-def _usage_input_output(u: Any, prompt: str, completion: str) -> dict:
-    if u.input_tokens or u.output_tokens:
-        return {"input_tokens": u.input_tokens, "output_tokens": u.output_tokens}
+def _usage_input_output(u: Any, prompt: str, completion: str) -> dict[str, Any]:
+    if u.input_tokens or u.output_tokens or u.thinking_tokens:
+        usage: dict[str, Any] = {
+            "input_tokens": int(u.input_tokens or 0),
+            "output_tokens": int(u.output_tokens or 0),
+        }
+        # Anthropic extended thinking：可选把思维链 token 单独标出
+        if u.thinking_tokens:
+            usage["thinking_tokens"] = int(u.thinking_tokens)
+        return usage
     return {"input_tokens": estimate_tokens(prompt), "output_tokens": estimate_tokens(completion)}
 
 
 async def _gen_stream(client: Any, prompt: str, tools: list[ToolDef],
                       model: str, model_id: str | None = None) -> AsyncIterator[bytes]:
+    """流式：thinking/text 各开一个 content_block，增量走 *_delta，符合 Anthropic SSE 标准。"""
     mid = _msg_id()
     yield _sse("message_start", {
         "type": "message_start",
@@ -93,36 +101,73 @@ async def _gen_stream(client: Any, prompt: str, tools: list[ToolDef],
     usages: list = []
     index = 0
     stop_reason = "end_turn"
+
+    thinking_index: int | None = None
+    thinking_open = False
+    text_index: int | None = None
+    text_open = False
+
+    async def _close_thinking() -> AsyncIterator[bytes]:
+        nonlocal thinking_open
+        if thinking_open and thinking_index is not None:
+            yield _sse("content_block_stop", {"type": "content_block_stop", "index": thinking_index})
+            thinking_open = False
+
+    async def _close_text() -> AsyncIterator[bytes]:
+        nonlocal text_open
+        if text_open and text_index is not None:
+            yield _sse("content_block_stop", {"type": "content_block_stop", "index": text_index})
+            text_open = False
+
     async for ir in stream_with_retry(client, prompt, tools, model_id=model_id):
         if ir.kind == "error":
+            async for c in _close_thinking():
+                yield c
+            async for c in _close_text():
+                yield c
             yield _sse("error", {"type": "error",
                                  "error": {"type": "api_error", "message": ir.error or "unknown"}})
             return
         if ir.kind == "thinking" and ir.thinking:
-            yield _sse("content_block_start", {
-                "type": "content_block_start", "index": index,
-                "content_block": {"type": "thinking", "thinking": ir.thinking, "signature": ""},
+            # 若 text 已开再来 thinking，先关 text（少见，保持块边界合法）
+            async for c in _close_text():
+                yield c
+            if not thinking_open:
+                thinking_index = index
+                index += 1
+                thinking_open = True
+                yield _sse("content_block_start", {
+                    "type": "content_block_start", "index": thinking_index,
+                    "content_block": {"type": "thinking", "thinking": "", "signature": ""},
+                })
+            yield _sse("content_block_delta", {
+                "type": "content_block_delta", "index": thinking_index,
+                "delta": {"type": "thinking_delta", "thinking": ir.thinking},
             })
-            yield _sse("content_block_stop", {"type": "content_block_stop", "index": index})
-            index += 1
         if ir.kind == "text" and ir.text:
+            async for c in _close_thinking():
+                yield c
             parts.append(ir.text)
             clean = strip_tool_calls(ir.text)
             if clean:
-                yield _sse("content_block_start", {
-                    "type": "content_block_start", "index": index,
-                    "content_block": {"type": "text", "text": ""},
-                })
+                if not text_open:
+                    text_index = index
+                    index += 1
+                    text_open = True
+                    yield _sse("content_block_start", {
+                        "type": "content_block_start", "index": text_index,
+                        "content_block": {"type": "text", "text": ""},
+                    })
                 yield _sse("content_block_delta", {
-                    "type": "content_block_delta", "index": index,
+                    "type": "content_block_delta", "index": text_index,
                     "delta": {"type": "text_delta", "text": clean},
                 })
-                yield _sse("content_block_stop", {"type": "content_block_stop", "index": index})
-                index += 1
             if tools:
                 calls = parse_tool_calls(ir.text, known_names={t.name for t in tools})
                 if calls:
                     stop_reason = "tool_use"
+                    async for c in _close_text():
+                        yield c
                     for c in calls:
                         yield _sse("content_block_start", {
                             "type": "content_block_start", "index": index,
@@ -140,6 +185,11 @@ async def _gen_stream(client: Any, prompt: str, tools: list[ToolDef],
             usages.append(ir.usage_delta)
         if ir.kind == "finish":
             break
+
+    async for c in _close_thinking():
+        yield c
+    async for c in _close_text():
+        yield c
 
     full_text = "".join(parts)
     usage = _usage_input_output(first_usage(usages), prompt, full_text)
@@ -167,16 +217,22 @@ async def messages(
 
     full_text, thinking_text, usages = await _collect(client, prompt, tools, model_id)
     content: list[dict[str, Any]] = []
+    # thinking 与 tool_use / text 并列，tool 路径不得丢弃 thinking
     if thinking_text:
         content.append({"type": "thinking", "thinking": thinking_text, "signature": ""})
-    content.append({"type": "text", "text": full_text})
     stop_reason = "end_turn"
     if tools:
         calls = parse_tool_calls(full_text, known_names={t.name for t in tools})
         if calls:
             stop_reason = "tool_use"
-            content = [{"type": "tool_use", "id": c.id, "name": c.name, "input": c.arguments}
-                       for c in calls]
+            content.extend([
+                {"type": "tool_use", "id": c.id, "name": c.name, "input": c.arguments}
+                for c in calls
+            ])
+        else:
+            content.append({"type": "text", "text": full_text})
+    else:
+        content.append({"type": "text", "text": full_text})
     usage = _usage_input_output(first_usage(usages), prompt, full_text)
     return {
         "id": _msg_id(), "type": "message", "role": "assistant", "model": model,

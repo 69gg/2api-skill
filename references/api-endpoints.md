@@ -10,7 +10,7 @@
 | `stream=true` / `stream=false` | **必须**（启用的 chat/responses/messages 路由） |
 | 请求含 `tools` 时返回标准 tool_calls / tool_use / function_call | **必须**（不得以上游无原生 FC 为由删除） |
 | 客户端 reasoning / thinking 相关入参进入上游上下文 | **必须**透传实质内容（见 adapters `extract_user_prompt`） |
-| 上游思维链映射到 `reasoning_content` / thinking block 等 | 上游有则 **必须** 解析输出 |
+| 上游思维链映射到 `reasoning_content` / thinking block 等 | 上游有则 **必须** 解析并随响应按标准格式返回（流式/非流式/与 tool 并列） |
 | 多模态上传 | 抓包有接口则 **必须**；否则文档声明不支持 |
 | admin 五端点 | 仅当 `--with-admin` |
 
@@ -35,37 +35,49 @@
 
 **流式响应**：SSE 帧 `data: {...}\n\n`，末尾 `data: [DONE]\n\n`：
 - 首帧 `{"choices":[{"delta":{"role":"assistant"}}]}`。
+- 思维链（先于或穿插正文）：`{"choices":[{"delta":{"reasoning_content":"..."}}]}`（DeepSeek / o-series 兼容）。
 - 正文：`{"choices":[{"delta":{"content":"增量"}}]}`。
-- 思维链：`{"choices":[{"delta":{"reasoning_content":"..."}}]}`（DeepSeek 兼容）。
 - tool call：`{"choices":[{"delta":{"tool_calls":[{"index","id","type":"function","function":{"name","arguments"}}]}}]}`。
 - 末帧含 `finish_reason` 与 `usage`。
 
 **关键点**：
-- 有 tool_calls 时 `content` 设为 `null`，`finish_reason="tool_calls"`。
+- 有 tool_calls 时 `content` 设为 `null`，`finish_reason="tool_calls"`；**`reasoning_content` 仍保留**（若有）。
 - tool call 的 `arguments` 是 JSON 字符串（非对象）。
 - usage 真实优先，否则 `estimate_tokens` 估算（详见 `references/tokens-usage.md`）。
+- 有 `thinking_tokens` 时附带 `usage.completion_tokens_details.reasoning_tokens`。
 
 ## 三、/v1/responses（OpenAI Responses）
 
 **请求**：`{model, input, instructions?, stream?, tools?}`。`input` 可为字符串或 messages 数组。
 
-**流式事件序列**（typed SSE）：
-- `response.created` → `response.output_text.delta`（正文）→ `response.output_item.added`/`response.function_call_arguments.delta`/`response.output_item.done`（tool）→ `response.reasoning_item.added`/`response.reasoning_summary_text.delta`/`done`（思维链）→ `response.completed`。
+**流式事件序列**（typed SSE；thinking **随到随发**，不攒到末尾）：
+- `response.created`
+- 若有思维链：`response.reasoning_item.added` → `response.reasoning_summary_text.delta`（可多帧）→ `response.reasoning_summary_text.done` → `response.reasoning_item.done`
+- 正文：`response.output_item.added`（message）→ `response.output_text.delta`（可多帧）
+- tool：`response.output_item.added` / `response.function_call_arguments.delta` / `response.output_item.done`
+- `response.completed`（`output` 含 reasoning / message / function_call 并列项）
 
-**关键点**：prompt 模式下，prompt tool 输出会被**反向封装**成原生 `response.function_call_arguments.delta` 等事件，对外接口与原生一致。详见 `references/tool-calls.md`。
+**关键点**：
+- prompt 模式下，prompt tool 输出会被**反向封装**成原生 `response.function_call_arguments.delta` 等事件，对外接口与原生一致。详见 `references/tool-calls.md`。
+- 非流式 `output`：有 thinking 时先放 `type=reasoning` 项；tool 路径**不得丢弃** reasoning。
+- 有 `thinking_tokens` 时附带 `usage.output_tokens_details.reasoning_tokens`。
 
 ## 四、/v1/messages（Anthropic Messages）
 
 **请求**：`{model, messages, system?, stream?, tools?, max_tokens?, thinking?}`。
 
-**流式事件序列**：
-- `message_start` → `content_block_start/delta/stop`（thinking block / text block / tool_use block 各一组）→ `message_delta`（含 `stop_reason` + `usage`）→ `message_stop`。
+**流式事件序列**（thinking/text 各一个 content_block，增量走 delta）：
+- `message_start`
+- 若有思维链：`content_block_start`（`type=thinking`, 初始 `thinking=""`）→ `content_block_delta`（`delta.type=thinking_delta`）×N → `content_block_stop`
+- 正文：`content_block_start`（`type=text`）→ `content_block_delta`（`text_delta`）×N → `content_block_stop`
+- tool：`content_block_start`（`type=tool_use`）→ `input_json_delta` → `content_block_stop`
+- `message_delta`（含 `stop_reason` + `usage`）→ `message_stop`
 
 **非流式响应**：
 ```json
 {
   "id": "msg_...", "type": "message", "role": "assistant", "model": "<id>",
-  "content": [{"type":"text","text":"..."}],  // 或 [{"type":"thinking",...},{"type":"tool_use","id","name","input"}]
+  "content": [{"type":"thinking","thinking":"...","signature":""}, {"type":"text","text":"..."}],
   "stop_reason": "end_turn|tool_use", "stop_sequence": null,
   "usage": {"input_tokens", "output_tokens"}
 }
@@ -73,8 +85,9 @@
 
 **关键点**：
 - thinking → `content` 里加 `{"type":"thinking","thinking":...,"signature":""}`（signature 空串，上游不提供）。
-- tool call → `{"type":"tool_use","id","name","input"}`，`stop_reason="tool_use"`。
+- tool call → 与 thinking **并列**于 `content`：`{"type":"tool_use","id","name","input"}`，`stop_reason="tool_use"`；**不得因 tool 丢弃 thinking**。
 - `system` 字段可被前置成一条 system message，与 messages 统一拍平。
+- 有 `thinking_tokens` 时 usage 可附带 `thinking_tokens` 字段。
 
 ## 五、/v1/messages/count_tokens
 

@@ -58,7 +58,7 @@ class IREvent:
 
 **5 种 kind 的语义**：
 - `text`：正文增量（assistant 回复内容）。
-- `thinking`：思维链增量（reasoning）。
+- `thinking`：思维链增量（reasoning）。adapter 必须按协议标准字段随响应返回（Chat `reasoning_content` / Responses `type=reasoning` / Anthropic `type=thinking`），流式随到随发，tool 路径不得丢弃。
 - `tool`：工具调用事件（上游原生工具或 prompt 模式解析出的调用）。
 - `finish`：本轮结束（带 `finish_reason`：`stop`/`length`/`tool_use`）。
 - `error`：上游错误（透传给客户端，不重试）。

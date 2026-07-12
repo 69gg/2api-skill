@@ -63,7 +63,7 @@ license: MIT
 7. **诚实**：token 用量、能力边界如实说明，无真实值则估算并标注，绝不编造。
 8. **API 面：流式 + tool calls（强制）**：启用的 `/v1` 路由必须支持 `stream=true/false`，并接受 `tools`、按协议返回 `tool_calls` / `tool_use` / function_call 帧。上游无原生 FC 时用 prompt 注入实现，**不得删除兼容层**；命中率不承诺 100%。真流式或伪流式（切片 SSE）均可，客户端须见标准 SSE。
 9. **system / tools 实质内容不删改**：客户端 → 上游上下文组装时，system/instructions 与 tools 的**实质指令与 schema 不得删改**。允许：`soften_system` 外层包装、删除纯垃圾元数据行、协议字段名映射、prompt 模式**前置追加** directive（tools 定义须完整写入）。禁止：改写身份/规则、阉割 parameters、丢弃 tools 列表。
-10. **reasoning 透传（强制）**：客户端 history 中的 `reasoning_content` / `thinking` / `reasoning` 等不得丢弃；上游若产思维链，parser 必须发 `IREvent(kind="thinking")`。
+10. **reasoning 透传（强制）**：客户端 history 中的 `reasoning_content` / `thinking` / `reasoning` 等不得丢弃；上游若产思维链，parser 必须发 `IREvent(kind="thinking")`，adapter **随响应按各协议标准格式返回**（Chat: `reasoning_content`；Responses: `type=reasoning`；Anthropic: `type=thinking` / `thinking_delta`）。流式随到随发，tool 路径不得丢弃。
 11. **文件上传（条件强制）**：抓包发现 upload / attachment / presigned / base64 文件字段 → **必须**实现 `upload_image`/`upload_file`（或等价）并在对话请求中引用；全程无上传接口 → 文档写明不支持即可。
 
 ## 3. 工作流总览

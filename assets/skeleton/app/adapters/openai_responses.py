@@ -72,6 +72,16 @@ def _build_prompt(req: ResponsesRequest) -> tuple[str, list[ToolDef]]:
     return base_prompt, tools
 
 
+def _usage_obj(u: Any, prompt: str, completion: str) -> dict[str, Any]:
+    """Responses usage；含 reasoning 时附 output_tokens_details.reasoning_tokens。"""
+    input_tokens = u.input_tokens or estimate_tokens(prompt)
+    output_tokens = u.output_tokens or estimate_tokens(completion)
+    usage: dict[str, Any] = {"input_tokens": input_tokens, "output_tokens": output_tokens}
+    if u.thinking_tokens:
+        usage["output_tokens_details"] = {"reasoning_tokens": int(u.thinking_tokens)}
+    return usage
+
+
 async def _collect(client: Any, prompt: str, tools: list[ToolDef],
                    model_id: str | None = None) -> tuple[str, str, list]:
     parts: list[str] = []
@@ -93,6 +103,7 @@ async def _collect(client: Any, prompt: str, tools: list[ToolDef],
 
 async def _gen_stream(client: Any, prompt: str, tools: list[ToolDef],
                       model: str, model_id: str | None = None) -> AsyncIterator[bytes]:
+    """流式：thinking 到达即按 Responses 标准帧输出，不攒到末尾。"""
     rid = _resp_id()
     created = int(time.time())
 
@@ -106,14 +117,61 @@ async def _gen_stream(client: Any, prompt: str, tools: list[ToolDef],
     thinking_parts: list[str] = []
     usages: list = []
     output: list[dict[str, Any]] = []
+    rsid: str | None = None
+    reasoning_done = False
+    text_item_id: str | None = None
+
     async for ir in stream_with_retry(client, prompt, tools, model_id=model_id):
         if ir.kind == "error":
             yield _sse("error", {"type": "error", "message": ir.error or "unknown"})
             return
+        if ir.kind == "thinking" and ir.thinking:
+            if rsid is None:
+                rsid = f"rs_{uuid.uuid4().hex[:24]}"
+                yield _sse("response.reasoning_item.added", {
+                    "type": "response.reasoning_item.added",
+                    "item": {"type": "reasoning", "id": rsid, "summary": []},
+                    "output_index": 0,
+                })
+            thinking_parts.append(ir.thinking)
+            yield _sse("response.reasoning_summary_text.delta", {
+                "type": "response.reasoning_summary_text.delta",
+                "item_id": rsid, "summary_index": 0, "output_index": 0,
+                "delta": ir.thinking,
+            })
         if ir.kind == "text" and ir.text:
+            # 正文开始前关闭 reasoning 项（标准顺序：reasoning → message）
+            if rsid is not None and not reasoning_done:
+                thinking_text = "".join(thinking_parts)
+                yield _sse("response.reasoning_summary_text.done", {
+                    "type": "response.reasoning_summary_text.done",
+                    "item_id": rsid, "summary_index": 0, "output_index": 0,
+                    "text": thinking_text,
+                })
+                yield _sse("response.reasoning_item.done", {
+                    "type": "response.reasoning_item.done",
+                    "output_index": 0,
+                    "item": {
+                        "type": "reasoning", "id": rsid,
+                        "summary": [{"type": "summary_text", "text": thinking_text}],
+                    },
+                })
+                reasoning_done = True
             parts.append(ir.text)
             clean = strip_tool_calls(ir.text)
             if clean:
+                if text_item_id is None:
+                    text_item_id = f"msg_{uuid.uuid4().hex[:24]}"
+                    out_idx = 1 if rsid else 0
+                    yield _sse("response.output_item.added", {
+                        "type": "response.output_item.added",
+                        "output_index": out_idx,
+                        "item": {
+                            "type": "message", "id": text_item_id,
+                            "status": "in_progress", "role": "assistant",
+                            "content": [],
+                        },
+                    })
                 yield _sse("response.output_text.delta", {
                     "type": "response.output_text.delta", "delta": clean,
                 })
@@ -125,7 +183,7 @@ async def _gen_stream(client: Any, prompt: str, tools: list[ToolDef],
                         "name": c.name, "arguments": json.dumps(c.arguments, ensure_ascii=False),
                         "status": "completed",
                     })
-                    output_index = len(output) - 1
+                    output_index = (1 if rsid else 0) + (1 if text_item_id else 0) + len(output) - 1
                     yield _sse("response.output_item.added", {
                         "type": "response.output_item.added", "output_index": output_index,
                         "item": {"type": "function_call", "id": c.id, "call_id": c.id,
@@ -143,41 +201,50 @@ async def _gen_stream(client: Any, prompt: str, tools: list[ToolDef],
                                  "arguments": json.dumps(c.arguments, ensure_ascii=False),
                                  "status": "completed"},
                     })
-        if ir.kind == "thinking" and ir.thinking:
-            thinking_parts.append(ir.thinking)
         if ir.usage_delta:
             usages.append(ir.usage_delta)
         if ir.kind == "finish":
             break
 
+    # 若全程只有 thinking 无 text，收尾时关闭 reasoning
+    if rsid is not None and not reasoning_done:
+        thinking_text = "".join(thinking_parts)
+        yield _sse("response.reasoning_summary_text.done", {
+            "type": "response.reasoning_summary_text.done",
+            "item_id": rsid, "summary_index": 0, "output_index": 0,
+            "text": thinking_text,
+        })
+        yield _sse("response.reasoning_item.done", {
+            "type": "response.reasoning_item.done",
+            "output_index": 0,
+            "item": {
+                "type": "reasoning", "id": rsid,
+                "summary": [{"type": "summary_text", "text": thinking_text}],
+            },
+        })
+
     full_text = "".join(parts)
     thinking_text = "".join(thinking_parts)
     clean_text = strip_tool_calls(full_text)
     final_output: list[dict[str, Any]] = []
-    if thinking_text:
-        rsid = f"rs_{uuid.uuid4().hex[:24]}"
+    if thinking_text and rsid:
         final_output.append({
             "type": "reasoning", "id": rsid,
             "summary": [{"type": "summary_text", "text": thinking_text}],
         })
-        yield _sse("response.reasoning_item.added", {
-            "type": "response.reasoning_item.added",
-            "item": {"type": "reasoning", "id": rsid, "summary": []}, "output_index": 0,
-        })
-        yield _sse("response.reasoning_summary_text.delta", {
-            "type": "response.reasoning_summary_text.delta",
-            "item_id": rsid, "summary_index": 0, "output_index": 0, "delta": thinking_text,
+    elif thinking_text:
+        final_output.append({
+            "type": "reasoning", "id": f"rs_{uuid.uuid4().hex[:24]}",
+            "summary": [{"type": "summary_text", "text": thinking_text}],
         })
     final_output.append({
-        "type": "message", "id": f"msg_{uuid.uuid4().hex[:24]}",
+        "type": "message", "id": text_item_id or f"msg_{uuid.uuid4().hex[:24]}",
         "status": "completed", "role": "assistant",
         "content": [{"type": "output_text", "text": clean_text}],
     })
     final_output.extend(output)
 
-    u = first_usage(usages)
-    usage = {"input_tokens": u.input_tokens or estimate_tokens(prompt),
-             "output_tokens": u.output_tokens or estimate_tokens(full_text)}
+    usage = _usage_obj(first_usage(usages), prompt, full_text)
     yield _sse("response.completed", {
         "type": "response.completed",
         "response": {"id": rid, "object": "response", "created_at": created, "model": model,
@@ -202,26 +269,31 @@ async def responses(
     full_text, thinking_text, usages = await _collect(client, prompt, tools, model_id)
     clean_text = strip_tool_calls(full_text)
     output: list[dict[str, Any]] = []
+    # reasoning 与 function_call / message 并列，tool 路径不得丢弃 thinking
     if thinking_text:
         output.append({
             "type": "reasoning", "id": f"rs_{uuid.uuid4().hex[:24]}",
             "summary": [{"type": "summary_text", "text": thinking_text}],
         })
-    output.append({
-        "type": "message", "id": f"msg_{uuid.uuid4().hex[:24]}",
-        "status": "completed", "role": "assistant",
-        "content": [{"type": "output_text", "text": clean_text}],
-    })
+    tool_items: list[dict[str, Any]] = []
     if tools:
         calls = parse_tool_calls(full_text, known_names={t.name for t in tools})
         if calls:
-            output = [{"type": "function_call", "id": c.id, "call_id": c.id,
-                       "name": c.name, "arguments": json.dumps(c.arguments, ensure_ascii=False),
-                       "status": "completed"} for c in calls]
-    u = first_usage(usages)
+            tool_items = [{
+                "type": "function_call", "id": c.id, "call_id": c.id,
+                "name": c.name, "arguments": json.dumps(c.arguments, ensure_ascii=False),
+                "status": "completed",
+            } for c in calls]
+    if tool_items:
+        output.extend(tool_items)
+    else:
+        output.append({
+            "type": "message", "id": f"msg_{uuid.uuid4().hex[:24]}",
+            "status": "completed", "role": "assistant",
+            "content": [{"type": "output_text", "text": clean_text}],
+        })
     return {
         "id": _resp_id(), "object": "response", "created_at": int(time.time()),
         "model": model, "status": "completed", "output": output,
-        "usage": {"input_tokens": u.input_tokens or estimate_tokens(prompt),
-                  "output_tokens": u.output_tokens or estimate_tokens(full_text)},
+        "usage": _usage_obj(first_usage(usages), prompt, full_text),
     }

@@ -17,11 +17,11 @@
 
 | 协议 | 字段 |
 |---|---|
-| OpenAI Chat | `{"prompt_tokens", "completion_tokens", "total_tokens"}` |
-| Anthropic Messages | `{"input_tokens", "output_tokens"}` |
-| OpenAI Responses | `{"input_tokens", "output_tokens"}` |
+| OpenAI Chat | `{"prompt_tokens", "completion_tokens", "total_tokens"}`；有思维链时 + `completion_tokens_details.reasoning_tokens` |
+| Anthropic Messages | `{"input_tokens", "output_tokens"}`；有思维链时可选 + `thinking_tokens` |
+| OpenAI Responses | `{"input_tokens", "output_tokens"}`；有思维链时 + `output_tokens_details.reasoning_tokens` |
 
-无真实 usage 时填 `estimate_tokens(prompt)` / `estimate_tokens(completion)`。
+无真实 usage 时填 `estimate_tokens(prompt)` / `estimate_tokens(completion)`。`reasoning_tokens` 是 completion/output 的**子集明细**，不重复计入 total。
 
 ## 四、流式累计
 

@@ -62,9 +62,12 @@ def first_usage(parts: list[Usage | None]) -> Usage:
 
     agent 一次问答可能跑多轮（每轮重读全上下文，input_tokens 含大量缓存命中），累加会
     重复计算系统提示。取第一轮最接近用户感知的单次用量。
+
+    非零判定含 thinking_tokens / cached_tokens（仅有思维链用量时也必须返回）。
     """
     for u in parts:
-        if u and (u.input_tokens or u.output_tokens):
+        if u and (u.input_tokens or u.output_tokens or u.thinking_tokens
+                  or u.cached_tokens or u.cache_creation_tokens):
             return u
     return Usage()
 

@@ -91,7 +91,15 @@ async def get_auth(self) -> dict[str, str]:
 ## 七、reasoning / thinking 事件
 
 - **入站**：history 中的 `reasoning_content`、Anthropic `thinking` block、Responses `reasoning` block 等，经 `extract_user_prompt` / `flatten_text` 进入上游上下文，**不得丢弃**。
-- **出站**：上游 SSE/事件若含思维链，`parser.py` **必须**产出 `IREvent(kind="thinking")`，由 adapter 映射到各协议字段；禁止只解析 text。
+- **出站**：上游 SSE/事件若含思维链，`parser.py` **必须**产出 `IREvent(kind="thinking")`，由 adapter **随响应**按标准格式返回；禁止只解析 text、禁止攒到末尾才发、禁止 tool 路径覆盖丢弃。
+
+| 协议 | 非流式字段 | 流式字段 |
+|---|---|---|
+| OpenAI Chat | `message.reasoning_content` | `delta.reasoning_content` |
+| OpenAI Responses | `output[]` 中 `type=reasoning` | `response.reasoning_item.*` / `response.reasoning_summary_text.*` |
+| Anthropic Messages | `content[]` 中 `type=thinking` | `content_block` + `thinking_delta` |
+
+常见上游字段 → `IREvent.thinking`：`thinking` / `thinking_text` / `reasoning` / `reasoning_content` / `delta.reasoning_content` / Anthropic `thinking_delta` / Responses `summary_text`。
 
 ## 八、错误分类换号（见 `references/auth-and-errors.md`）
 

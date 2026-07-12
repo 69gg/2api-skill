@@ -25,6 +25,7 @@ class ChatMessage(BaseModel):
     content: Any = None
     name: str | None = None
     tool_call_id: str | None = None
+    reasoning_content: str | None = None  # DeepSeek / OpenAI o-series 兼容
     model_config = {"extra": "allow"}
 
 
@@ -48,11 +49,23 @@ def _sse(obj: dict) -> bytes:
     return f"data: {json.dumps(obj, ensure_ascii=False)}\n\n".encode()
 
 
-def _usage_obj(u: Any, prompt: str, completion: str) -> dict:
-    """OpenAI usage：上游真实 usage 优先，否则 token 估算（CJK 感知 + tiktoken 兜底）。"""
-    if u.input_tokens or u.output_tokens:
-        return {"prompt_tokens": u.input_tokens, "completion_tokens": u.output_tokens,
-                "total_tokens": u.input_tokens + u.output_tokens}
+def _usage_obj(u: Any, prompt: str, completion: str) -> dict[str, Any]:
+    """OpenAI usage：上游真实 usage 优先，否则 token 估算（CJK 感知 + tiktoken 兜底）。
+
+    若有 thinking_tokens，附带 ``completion_tokens_details.reasoning_tokens``
+    （o-series / DeepSeek 兼容；reasoning 是 completion 的子集明细，不重复加总）。
+    """
+    if u.input_tokens or u.output_tokens or u.thinking_tokens:
+        prompt_tokens = int(u.input_tokens or 0)
+        completion_tokens = int(u.output_tokens or 0)
+        usage: dict[str, Any] = {
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": prompt_tokens + completion_tokens,
+        }
+        if u.thinking_tokens:
+            usage["completion_tokens_details"] = {"reasoning_tokens": int(u.thinking_tokens)}
+        return usage
     p, c = estimate_tokens(prompt), estimate_tokens(completion)
     return {"prompt_tokens": p, "completion_tokens": c, "total_tokens": p + c}
 
