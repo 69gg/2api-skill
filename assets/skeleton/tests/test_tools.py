@@ -75,6 +75,15 @@ def test_build_directive_variants():
     assert "<tool_call>" in d and '"f"' in d
     assert d != r
     assert "fixture" in r.lower()
+    # 硬协议：无 native runtime，禁止编造 tool_rejected，文末可钉 REMINDER
+    assert "NO native function-calling" in d
+    assert "tool_rejected" in d
+    assert "TOOL PROTOCOL" in d
+    assert d.startswith("=====")
+    from app.tools import build_tool_tail_reminder
+
+    assert "REMINDER" in build_tool_tail_reminder(tools)
+    assert build_tool_tail_reminder([]) == ""
 
 
 def test_stream_parser_cross_chunk():

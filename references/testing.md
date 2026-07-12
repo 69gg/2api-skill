@@ -21,7 +21,7 @@
 | `tests/test_tools.py` | 三级解析、tolerant_parse、strip、directive、拒绝跳过（refusal_detect 门控）、真流式状态机 |
 | `tests/test_refusal.py` | looks_refusal / is_refusal 开关门控 |
 | `tests/test_streaming.py` | warmup/guard 双缓冲、拦截前缀、safe_sse_stream |
-| `tests/test_adapters.py` | 三家 API（chat/responses/messages）流式+非流式+tool call、**reasoning/thinking 透传**（含与 tool 并存）、v1 key 校验、count_tokens、models |
+| `tests/test_adapters.py` | 三家 API 流式+非流式+tool、reasoning 透传、v1 key、**[tools] 历史合并**（Anthropic tool_result / OpenAI 并行 / Responses function_call）、system content block flatten |
 | `tests/test_admin.py` | 留空关闭(404)、错 key(401)、CRUD + reload、敏感字段隐藏 |
 
 ## 三、测试要点

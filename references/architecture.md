@@ -90,17 +90,16 @@ class IREvent:
   → get_client (round-robin 取号 → _RetryingClient 包装)
   → adapter._build_prompt: extract_user_prompt(messages, model_id=)  # 拍平；无 system 时注入缺省身份
   → orchestrator.stream_with_retry(client, prompt, tools)
-      ├─ build_tool_directive(tools)        # prompt 模式注入指令；native 不注入
+      ├─ 有 tools：TOOL PROTOCOL 置顶 + base_prompt + REMINDER 置底
       ├─ client.stream(prompt, model_id)     # 上游请求 → IREvent 流
-      ├─ buffer 一轮 → parse_tool_calls
-      └─ 若 refusal_detect：is_refusal → 换 retry 变体重试
+      └─ 若 refusal_detect：buffer + is_refusal → 换 retry 变体重试
   → adapter 把 IREvent 流转成各家格式（SSE 帧）
   → client._RetryingClient 捕获失效 → mark_failed → 503 → 客户端重试换号
 ```
 
 ## 五、可插拔接口（核心解耦点）
 
-- **adapter 层**：`extract_user_prompt` 把 messages 拍平成单条 prompt（system **默认原样**；`soften_system=true` 时软化包装且不删改实质 + assistant 历史 tool_call 渲染成围栏 few-shot）；`flatten_text` 把 content block → 纯文本并**保留** thinking/reasoning。客户端 tools 定义完整进入 prompt/native 路径。
+- **adapter 层**：`extract_user_prompt` 拍平 messages（system 默认 `[system]\n...`；历史 tool 统一为 `[tools]` 按 id 合并 call+result；`flatten_text` 默认跳过 tool 块以免丢结果，由 extract 统一处理）。thinking/reasoning 保留。客户端 tools schema 完整进入 directive。
 - **缺省身份 system**（`app/system_sanitizer.default_identity_system`）：当客户端**未**传任何非空 system / instructions 时，`extract_user_prompt(..., model_id=)` 前置注入一段短英文提示——声明对外 catalog model id，并禁止模型提及/暴露 webchat 平台名（`PLATFORM_NAME`，由 `copy_skeleton` 替换 `{{Platform}}`）。有客户端 system 时**不注入、不覆盖**。
 - **对抗策略（默认关）**：`soften_system` / `refusal_detect` 仅在 `copy_skeleton --with-soften-system` / `--with-refusal-detect` 或 config 手动打开后生效。
 - **orchestrator**：duck-type client，不依赖具体上游（`stream(prompt, model_id)`）。

@@ -44,12 +44,24 @@ def _sse(event: str, data: dict) -> bytes:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n".encode()
 
 
+def _normalize_system(system: Any) -> str:
+    """Anthropic ``system``：str 或 content block 数组 → 纯文本（勿 json.dumps）。"""
+    from app.adapters import flatten_text
+
+    if system is None:
+        return ""
+    if isinstance(system, str):
+        return system
+    return flatten_text(system)
+
+
 def _build_prompt(req: MessagesRequest, model: str) -> tuple[str, list[ToolDef]]:
     tools = [ToolDef.from_anthropic(t) for t in (req.tools or [])]
     msgs = [m.model_dump() for m in req.messages]
     if req.system is not None:
-        sys_text = req.system if isinstance(req.system, str) else json.dumps(req.system, ensure_ascii=False)
-        msgs = [{"role": "system", "content": sys_text}, *msgs]
+        sys_text = _normalize_system(req.system)
+        if sys_text.strip():
+            msgs = [{"role": "system", "content": sys_text}, *msgs]
     base_prompt = extract_user_prompt(msgs, model_id=model)
     return base_prompt, tools
 

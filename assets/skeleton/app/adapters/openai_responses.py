@@ -38,26 +38,73 @@ def _sse(event: str, data: dict) -> bytes:
 
 
 def _input_to_messages(inp: Any, instructions: str | None) -> list[dict[str, Any]]:
-    """把 Responses 的 input 归一成 [{role, content}]。input 可以是 str 或 messages 数组。"""
+    """把 Responses 的 input 归一成 chat-style messages（供 extract_user_prompt）。
+
+    支持：
+    - str / message 项
+    - ``function_call`` → assistant + tool_calls（保留 id/name/arguments 结构）
+    - ``function_call_output`` → role=tool + tool_call_id + content
+    """
     if isinstance(inp, str):
         msgs: list[dict[str, Any]] = [{"role": "user", "content": inp}]
     elif isinstance(inp, list):
         msgs = []
         for it in inp:
-            if isinstance(it, dict):
-                itype = it.get("type")
-                if itype == "message":
-                    msgs.append({"role": it.get("role", "user"), "content": it.get("content", it)})
-                elif itype == "reasoning":
-                    summary = it.get("summary") or []
-                    msgs.append({"role": "assistant",
-                                 "content": [{"type": "reasoning", "summary": summary}]})
-                elif itype in ("function_call", "function_call_output"):
-                    msgs.append({"role": "tool", "content": str(it)})
-                else:
-                    msgs.append({"role": it.get("role", "user"), "content": it.get("content", it)})
-            else:
+            if not isinstance(it, dict):
                 msgs.append({"role": "user", "content": str(it)})
+                continue
+            itype = it.get("type")
+            if itype == "message":
+                msgs.append({
+                    "role": it.get("role", "user"),
+                    "content": it.get("content", it),
+                    **({"tool_calls": it["tool_calls"]} if it.get("tool_calls") else {}),
+                })
+            elif itype == "reasoning":
+                summary = it.get("summary") or []
+                msgs.append({
+                    "role": "assistant",
+                    "content": [{"type": "reasoning", "summary": summary}],
+                })
+            elif itype == "function_call":
+                call_id = it.get("call_id") or it.get("id")
+                args = it.get("arguments", "{}")
+                if not isinstance(args, str):
+                    args = json.dumps(args or {}, ensure_ascii=False)
+                msgs.append({
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [{
+                        "id": call_id,
+                        "type": "function",
+                        "function": {
+                            "name": it.get("name") or "",
+                            "arguments": args,
+                        },
+                    }],
+                })
+            elif itype == "function_call_output":
+                out = it.get("output")
+                if out is None:
+                    out = it.get("content", "")
+                msgs.append({
+                    "role": "tool",
+                    "tool_call_id": it.get("call_id") or it.get("id"),
+                    "content": out if isinstance(out, str) else json.dumps(out, ensure_ascii=False),
+                })
+            elif it.get("role") == "tool" or itype == "tool":
+                msgs.append({
+                    "role": "tool",
+                    "tool_call_id": it.get("tool_call_id") or it.get("call_id") or it.get("id"),
+                    "name": it.get("name"),
+                    "content": it.get("content", it.get("output", "")),
+                })
+            else:
+                msgs.append({
+                    "role": it.get("role", "user"),
+                    "content": it.get("content", it),
+                    **({"tool_calls": it["tool_calls"]} if it.get("tool_calls") else {}),
+                })
     else:
         msgs = [{"role": "user", "content": str(inp)}]
     if instructions:

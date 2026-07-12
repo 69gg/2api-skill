@@ -351,7 +351,7 @@ def test_extract_user_prompt_default_identity_when_no_system():
 
 
 def test_extract_user_prompt_no_default_when_system_present():
-    """有客户端 system 时不注入缺省身份，且不覆盖实质指令。"""
+    """有客户端 system 时不注入缺省身份；原样保留为 [system]。"""
     from app.adapters import extract_user_prompt
 
     prompt = extract_user_prompt(
@@ -362,12 +362,13 @@ def test_extract_user_prompt_no_default_when_system_present():
         model_id="claude-sonnet-4",
     )
     assert "你是一个简洁的助手" in prompt
+    assert "[system]\n你是一个简洁的助手" in prompt
     assert "Do not mention" not in prompt
     assert "`claude-sonnet-4`" not in prompt
 
 
 def test_extract_user_prompt_soften_off_by_default():
-    """默认不软化 system：无柔和背景包装。"""
+    """默认不软化 system：无柔和背景包装，带 [system] 标签。"""
     from app.adapters import extract_user_prompt
 
     prompt = extract_user_prompt(
@@ -379,6 +380,7 @@ def test_extract_user_prompt_soften_off_by_default():
         soften=False,
     )
     assert "You must always answer in French." in prompt
+    assert "[system]\nYou must always answer in French." in prompt
     assert "for reference" not in prompt.lower()
     assert "Background context" not in prompt
 
@@ -411,6 +413,147 @@ def test_extract_user_prompt_empty_system_gets_default():
         )
         assert "`gpt-4o`" in prompt, repr(sys_content)
         assert "Do not mention" in prompt, repr(sys_content)
+
+
+def test_extract_anthropic_tool_result_not_dropped():
+    """Anthropic 多轮：tool_use + tool_result 合并进 [tools]，call 与 result 都显示。"""
+    from app.adapters import extract_user_prompt
+
+    msgs = [
+        {"role": "user", "content": "list files"},
+        {
+            "role": "assistant",
+            "content": [
+                {"type": "text", "text": "listing"},
+                {"type": "tool_use", "id": "t1", "name": "Bash", "input": {"command": "ls"}},
+            ],
+        },
+        {
+            "role": "user",
+            "content": [
+                {"type": "tool_result", "tool_use_id": "t1", "content": "AGENTS.md\nsrc/\n"},
+            ],
+        },
+    ]
+    prompt = extract_user_prompt(msgs, model_id="claude-opus-4-8")
+    assert "[tools]" in prompt
+    assert "[t1]" in prompt
+    assert "name: Bash" in prompt
+    assert "arguments:" in prompt and "ls" in prompt
+    assert "result:" in prompt
+    assert "AGENTS.md" in prompt
+    assert "[assistant]\nlisting" in prompt
+    assert prompt.count("[tools]") == 1
+
+
+def test_extract_openai_parallel_tool_calls_and_results():
+    """OpenAI chat：并行 tool_calls + 多条 role=tool → 单一 [tools] 块。"""
+    from app.adapters import extract_user_prompt
+
+    msgs = [
+        {"role": "user", "content": "weather and time"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_a",
+                    "type": "function",
+                    "function": {"name": "get_weather", "arguments": '{"city":"Tokyo"}'},
+                },
+                {
+                    "id": "call_b",
+                    "type": "function",
+                    "function": {"name": "get_time", "arguments": '{"tz":"JST"}'},
+                },
+            ],
+        },
+        {"role": "tool", "tool_call_id": "call_a", "content": "sunny"},
+        {"role": "tool", "tool_call_id": "call_b", "content": "12:00"},
+    ]
+    prompt = extract_user_prompt(msgs, model_id="gpt-4o")
+    assert prompt.count("[tools]") == 1
+    assert "[call_a]" in prompt and "[call_b]" in prompt
+    assert "name: get_weather" in prompt and "name: get_time" in prompt
+    assert "sunny" in prompt and "12:00" in prompt
+    assert prompt.count("result:") == 2
+    a_pos = prompt.index("[call_a]")
+    assert prompt.index("name: get_weather", a_pos) < prompt.index("result:", a_pos)
+    assert prompt.index("[call_a]") < prompt.index("[call_b]")
+
+
+def test_extract_anthropic_parallel_tool_results():
+    """Anthropic：并行 tool_use + 同一 user 内多 tool_result，续写文本保留。"""
+    from app.adapters import extract_user_prompt
+
+    msgs = [
+        {
+            "role": "assistant",
+            "content": [
+                {"type": "tool_use", "id": "t1", "name": "Bash", "input": {"command": "ls"}},
+                {"type": "tool_use", "id": "t2", "name": "Read", "input": {"path": "a.py"}},
+            ],
+        },
+        {
+            "role": "user",
+            "content": [
+                {"type": "tool_result", "tool_use_id": "t1", "content": "filelist"},
+                {"type": "tool_result", "tool_use_id": "t2", "content": "print(1)"},
+                {"type": "text", "text": "continue please"},
+            ],
+        },
+    ]
+    prompt = extract_user_prompt(msgs)
+    assert prompt.count("[tools]") == 1
+    assert "[t1]" in prompt and "[t2]" in prompt
+    assert "filelist" in prompt and "print(1)" in prompt
+    assert "[user]\ncontinue please" in prompt
+
+
+def test_responses_function_call_input_normalized():
+    """/v1/responses input 里 function_call / function_call_output 不得 str() 丢结构。"""
+    from app.adapters import extract_user_prompt
+    from app.adapters.openai_responses import _input_to_messages
+
+    inp = [
+        {"type": "message", "role": "user", "content": "run tools"},
+        {
+            "type": "function_call",
+            "id": "fc_1",
+            "call_id": "call_1",
+            "name": "Bash",
+            "arguments": '{"command":"ls"}',
+        },
+        {
+            "type": "function_call",
+            "call_id": "call_2",
+            "name": "Read",
+            "arguments": '{"path":"x"}',
+        },
+        {"type": "function_call_output", "call_id": "call_1", "output": "a b c"},
+        {"type": "function_call_output", "call_id": "call_2", "output": "hello"},
+    ]
+    msgs = _input_to_messages(inp, None)
+    prompt = extract_user_prompt(msgs)
+    assert "Bash" in prompt and "Read" in prompt
+    assert prompt.count("[tools]") == 1
+    assert "[call_1]" in prompt and "[call_2]" in prompt
+    assert "a b c" in prompt and "hello" in prompt
+    assert prompt.count("result:") == 2
+    assert "{'type': 'function_call'" not in prompt
+
+
+def test_anthropic_system_content_blocks_flattened():
+    """system 为 content block 数组时 flatten 为纯文本，禁止 json.dumps 残留。"""
+    from app.adapters.anthropic_messages import _normalize_system
+
+    sys_blocks = [
+        {"type": "text", "text": "x-anthropic-billing-header: secret;"},
+        {"type": "text", "text": "You are Claude Code."},
+    ]
+    text = _normalize_system(sys_blocks)
+    assert "You are Claude Code." in text
+    assert "[{'type'" not in text and '[{"type"' not in text
 
 
 def test_chat_injects_default_identity_into_upstream_prompt(app, text_provider):

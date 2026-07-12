@@ -1,10 +1,12 @@
-"""语义级重试编排：在 client 与 adapter 之间插一层。
+"""语义级编排：在 client 与 adapter 之间拼接 tool directive，可选拒绝重试。
 
-整轮 buffer 一轮回复 → 检测 agent 拒绝 → 换 tool 指令变体（default → retry）重建 prompt 重试。
-与 :mod:`app.deps`（账号级 503 换号）正交：那层处理认证/额度失效，本层处理 agent 语义级拒绝。
+有 tools 时 prompt 结构固定为：
+  [TOOL PROTOCOL 全文 + tools 列表]  ← 始终最顶端
+  [base_prompt: system / history / user]
+  [TOOL PROTOCOL REMINDER]           ← 文末再钉一次，抗长历史 recency
 
-``client`` duck-type：任何带 ``async stream(prompt, model_id=None) -> AsyncIterator[IREvent]``
-的对象均可（UpstreamProvider / _RetryingClient）。
+拒绝检测（``refusal_detect``）默认关：真流式透传。
+开启后：整轮 buffer → 检测拒绝 → 换 retry 变体重试（与 deps 账号换号正交）。
 """
 from __future__ import annotations
 
@@ -14,16 +16,30 @@ from typing import Any
 
 from app.events import IREvent
 from app.refusal import is_refusal
-from app.tools import ToolDef, build_tool_directive, parse_tool_calls
+from app.tools import (
+    ToolDef,
+    build_tool_directive,
+    build_tool_tail_reminder,
+    parse_tool_calls,
+)
+
+
+def _compose_prompt(base_prompt: str, tools: list[ToolDef], *, variant: str = "default") -> str:
+    """有 tools：directive 置顶 + base + tail；无 tools：原样。"""
+    if not tools:
+        return base_prompt
+    head = build_tool_directive(tools, variant=variant)
+    tail = build_tool_tail_reminder(tools) if variant == "default" else ""
+    # retry 变体用整段替换头，仍钉 tail 提醒
+    if variant != "default":
+        tail = build_tool_tail_reminder(tools)
+    return f"{head}\n\n{base_prompt}{tail}"
 
 
 async def _collect_round(
     client: Any, prompt: str, model_id: str | None,
 ) -> tuple[list[IREvent], str, bool]:
-    """跑一轮 client.stream，收集全部 IREvent 并拼接 text。
-
-    返回 ``(events, full_text, had_error)``。``had_error`` 表示本轮含 error 事件（透传不重试）。
-    """
+    """跑一轮 client.stream，收集全部 IREvent 并拼接 text。"""
     events: list[IREvent] = []
     parts: list[str] = []
     had_error = False
@@ -47,43 +63,47 @@ async def stream_with_retry(
     *,
     max_retries: int | None = None,
 ) -> AsyncIterator[IREvent]:
-    """驱动 client.stream，agent 拒绝时换 tool 指令变体重试，yield 最终轮 IREvent 流。
+    """拼 tool directive 后驱动 client.stream；可选拒绝检测换变体重试。
 
-    - ``base_prompt`` **不含** directive；directive 由本函数按变体拼接（重试时 default→retry）。
-    - 无 tools 时不判拒绝（纯对话 agent 拒绝可能是合理的），一轮即止。
-    - 有 tools 时：产出 tool_call，或非拒绝纯文本 → 即止；命中拒绝 → 换 retry 变体重试，
-      最多 ``max_retries`` 次（默认读 ``config.tool_call_retries``）。
-    - 底层 error 透传不重试；耗尽仍拒绝 → 输出最后一轮（回退文本）。
+    - ``base_prompt`` **不含** directive；有 tools 时 head+base+tail。
+    - ``refusal_detect=false``（默认）或无 tools：真流式透传。
+    - ``refusal_detect=true`` 且有 tools：buffer 一轮；命中拒绝则换 retry 变体重试。
     """
     has_tools = bool(tools)
     if max_retries is None:
         from app.config import get_settings
 
         settings = get_settings()
-        # 拒绝重试仅在 refusal_detect 开启时生效；否则只跑一轮
         max_retries = settings.tool_call_retries if settings.refusal_detect else 0
-    max_attempts = 1 + (max_retries if has_tools and max_retries > 0 else 0)
-    known = {t.name for t in tools} if has_tools else set()
 
+    # 默认路径：不 buffer，流式透传
+    if not has_tools or max_retries <= 0:
+        prompt = _compose_prompt(base_prompt, tools, variant="default")
+        async for ir in client.stream(prompt, model_id=model_id):
+            yield ir
+            if ir.kind in ("error", "finish"):
+                return
+        return
+
+    # 拒绝检测路径：buffer + 换变体重试
+    known = {t.name for t in tools}
+    max_attempts = 1 + max_retries
     chosen: list[IREvent] = []
     for attempt in range(max_attempts):
         variant = "retry" if attempt > 0 else "default"
-        directive = build_tool_directive(tools, variant=variant) if has_tools else ""
-        prompt = f"{directive}\n\n{base_prompt}" if directive else base_prompt
+        prompt = _compose_prompt(base_prompt, tools, variant=variant)
         events, full_text, had_error = await _collect_round(client, prompt, model_id)
         if had_error:
             for ev in events:
                 yield ev
             return
         chosen = events
-        if not has_tools:
-            break
         if parse_tool_calls(full_text, known_names=known):
-            break  # 成功产出 tool_call
+            break
         if not is_refusal(full_text, has_tools=True):
-            break  # 非拒绝的纯文本（agent 选择不用工具）→ 不重试
+            break
         if attempt + 1 >= max_attempts:
-            break  # 耗尽，保留这轮回退
+            break
         print(f"[orchestrator] refusal detected (variant={variant}); retry", file=sys.stderr)
     for ev in chosen:
         yield ev

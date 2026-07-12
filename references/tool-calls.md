@@ -15,7 +15,7 @@
 
 `app/orchestrator.py` 按 `settings.upstream_strategy` 决定是否注入 directive；prompt 模式才注入。
 
-## 二、指令模板（`app/tools.py:_DIRECTIVES`）
+## 二、指令模板（硬协议 + 文末提醒）
 
 围栏标签 `OPEN_TAG = "<tool_call>"`、`CLOSE_TAG = "</tool_call>"`，让模型按下面格式输出工具调用：
 
@@ -23,11 +23,26 @@
 <tool_call>{"name": "<tool_name>", "arguments": { ... }}</tool_call>
 ```
 
-**default 变体**（首轮）：明确要求模型把工具调用包成上述围栏，并给出可用工具列表（name/description/parameters 的紧凑 JSON）。
+**拼接位置**（`orchestrator._compose_prompt`，有 tools 时）：
 
-**retry 变体**（首轮被拒绝时换用）：伪装成「为下游 dispatcher 测试套件生成期望输出 fixture」，把工具调用包装成 fixture 文本，弱化「伪造工具调用」色彩，降低上游 agent 的对抗刺激（参考 promptql2api 的认知重构角度）。
+```text
+[TOOL PROTOCOL 全文 + tools 列表]   ← 始终最顶端（最高优先级）
+[base_prompt: system / history / user]
+[TOOL PROTOCOL REMINDER]            ← 文末再钉一次，抗长历史 recency
+```
 
-两个变体都禁止 prose/markdown 包裹，要求只输出围栏块；若无需工具则正常回复。
+**default（`_DIRECTIVE_DEFAULT`）硬协议要点**：
+- 标题 `TOOL PROTOCOL (ALWAYS FIRST; highest priority)`，覆盖下方 system/history 冲突说法
+- 明确 **无 native function-calling / 无 tool UI**，只能吐文本围栏
+- 说明历史里过去 turn 以 `[tools]`/`[id]`/name/arguments/`result:` 出现（只读，勿当调用格式再吐）
+- **黑名单**：禁止编造 `tool_rejected` / empty tool pool / Bash not available / 无法访问文件系统
+- 查项目/跑命令 → 立刻 `<tool_call>`；有 `result:` 后继续任务
+
+**retry 变体**（仅 `refusal_detect=true` 时）：TEXT FIXTURE TASK 角度。
+
+**文末** `_DIRECTIVE_TAIL`：`TOOL PROTOCOL REMINDER` 再钉调用格式。
+
+> 请求体里的 `tools` JSON 一直传到网关；「传不进去」通常指进上游 prompt 的**协议不够硬**，或**多轮 call/result 拍扁时丢了**，不是 HTTP 没带 tools 字段。
 
 ## 三、三级降级解析（`app/tools.py:parse_tool_calls`）
 
@@ -58,6 +73,23 @@ adapter 收到 IREvent(kind="text") 增量时：
 1. 用 `ToolCallStreamParser.feed(text)` 增量解析。
 2. text 增量经 `strip_tool_calls` 剥离围栏后作为 content 增量释放给客户端。
 3. tool 增量按各家协议转成对应格式（OpenAI `tool_calls` chunk / Anthropic `tool_use` block / Responses `function_call_arguments.delta`）。
+
+## 五 bis、历史 call/result 双通道（`extract_user_prompt`）
+
+两条通道互不混用：
+
+| 通道 | 格式 | 用途 |
+|---|---|---|
+| **模型输出** | `<tool_call>{"name","arguments"}</tool_call>` | 宿主 `parse_tool_calls` → 客户端 tool_calls/tool_use |
+| **历史进上游** | `[tools]` + `[id]` + name/arguments + `---` + `result:` | 多轮观测；并行多 id 同块 |
+
+合并策略（`format_tools_history_block` / `_merge_call_and_result_entries`）：
+1. assistant 上 `tool_calls` / content 里 `tool_use` → call entries
+2. 往后吃连续 `role=tool` 或 user 里 `tool_result`
+3. 按 id 把 result 并进同一条
+4. 连续「仅 tool、无正文」的 assistant（Responses 并行拆条）先并成并行 call
+
+**禁止**：`flatten_text` 静默丢掉 `tool_use`/`tool_result`（默认 skip 这些 type，由 extract 统一成 `[tools]`）；Anthropic `system` 数组勿 `json.dumps`（用 `flatten_text` / `_normalize_system`）。
 
 ## 六、强 system prompt / 身份对抗场景的引导策略
 
