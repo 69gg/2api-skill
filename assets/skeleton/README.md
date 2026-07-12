@@ -12,6 +12,7 @@
 - **多账户轮询**与失败自动换号
 - **token 用量**：优先返回上游真实 usage，否则估算
 - **缺省身份**：请求未带 system / instructions 时，自动注入「真实 model id + 勿提及平台」提示
+- **访问日志**：耗时 / token 用量 / 入站 header·body / 出站 body（脱敏），可写入 `logs/` 并按大小轮转
 <!-- FEATURE:admin -->
 - **/admin 管理后台**（可选，独立鉴权）
 <!-- /FEATURE:admin -->
@@ -75,6 +76,24 @@ uv run uvicorn app.main:app --host 0.0.0.0 --port 8088
 
 CLI 注册时还可用 `--proxy` 临时覆盖配置中的注册机代理。
 
+## 日志
+
+在 `config.toml` 的 `[logging]` 段配置：
+
+| 键 | 默认 | 说明 |
+|---|---|---|
+| `enabled` | `true` | 是否写入日志文件；`false` 仅控制台 |
+| `dir` | `logs` | 日志目录（已 gitignore） |
+| `filename` | `gateway.log` | 主文件名；轮转后为 `gateway.log.1` … |
+| `level` | `INFO` | `DEBUG` / `INFO` / `WARNING` / `ERROR` |
+| `max_bytes` | `10485760` | 单文件最大字节（默认 10 MiB），超出后轮转 |
+| `backup_count` | `5` | 轮转保留份数 |
+| `log_request_body` | `true` | 是否记录请求 body（Authorization 等已脱敏） |
+| `log_response_body` | `true` | 是否记录响应 body（脱敏 + 截断） |
+| `max_body_chars` | `4000` | body 日志最大字符数 |
+
+每条 `/v1/*` 请求会记录：`elapsed_ms`、从响应解析的 `usage`、入站 headers/body、出站 body；响应头带回 `x-request-id` 便于对照。`/healthz` 不记访问日志。
+
 ## 客户端示例
 
 ```bash
@@ -116,6 +135,7 @@ registrar/      # 注册机（独立包）
 tests/          # 单元测试
 config.toml     # 配置（gitignore）
 account/        # 账号凭据（gitignore）
+logs/           # 运行日志（gitignore，可轮转）
 ```
 
 ## License

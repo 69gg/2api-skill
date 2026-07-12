@@ -1,6 +1,6 @@
 """网关配置：从 config.toml 加载（pydantic.BaseModel + tomllib，无 pydantic-settings）。
 
-``config.toml`` 只放「与账号无关」的配置（网关 / 行为 / 上游 / 代理 / 注册机）；
+``config.toml`` 只放「与账号无关」的配置（网关 / 行为 / 上游 / 代理 / 日志 / 注册机）；
 每个账号凭据存 ``account/<name>.json``，由 :mod:`app.account` 管理。
 """
 from __future__ import annotations
@@ -35,6 +35,17 @@ class Settings(BaseModel):
     proxy_url: str = ""  # 默认代理（网关 → 上游）
     registrar_proxy_url: str = ""  # 注册机代理；空则回退 proxy_url
 
+    # 日志（[logging] 段）
+    log_enabled: bool = True  # 是否写入 logs/ 文件；false = 仅控制台
+    log_dir: str = "logs"
+    log_filename: str = "gateway.log"
+    log_level: str = "INFO"
+    log_max_bytes: int = 10 * 1024 * 1024  # 单文件最大字节，超出轮转
+    log_backup_count: int = 5  # 轮转保留份数
+    log_request_body: bool = True  # 是否记录请求 body（已脱敏）
+    log_response_body: bool = True  # 是否记录响应 body（已脱敏）
+    log_max_body_chars: int = 4000  # body 日志最大字符
+
     # 账号凭据目录（相对工作目录；account/<name>.json，gitignored）
     account_dir: str = "account"
 
@@ -64,11 +75,12 @@ class Settings(BaseModel):
 
 
 def _flatten_toml(data: dict) -> dict:
-    """平铺 [gateway]/[upstream]/[registry]/[admin]/[proxy]；忽略 [email]/[captcha]（仅注册机用）。
+    """平铺 [gateway]/[upstream]/[registry]/[admin]/[proxy]/[logging]；
+    忽略 [email]/[captcha]（仅注册机用）。
 
     toml 简短键名映射到 Settings 字段（``api_key`` → ``gateway_api_key``，
     ``auth_key`` → ``admin_auth_key``；``[proxy].url`` / ``registrar_url`` →
-    ``proxy_url`` / ``registrar_proxy_url``）。
+    ``proxy_url`` / ``registrar_proxy_url``；``[logging].*`` → ``log_*``）。
     """
     flat: dict = {}
     for section in ("gateway", "upstream", "registry", "admin"):
@@ -87,6 +99,24 @@ def _flatten_toml(data: dict) -> dict:
             flat["registrar_proxy_url"] = str(
                 proxy.get("registrar_url") or proxy.get("registrar") or ""
             )
+
+    # [logging] → log_* 字段
+    logging_sec = data.get("logging") or {}
+    if isinstance(logging_sec, dict):
+        key_map = {
+            "enabled": "log_enabled",
+            "dir": "log_dir",
+            "filename": "log_filename",
+            "level": "log_level",
+            "max_bytes": "log_max_bytes",
+            "backup_count": "log_backup_count",
+            "log_request_body": "log_request_body",
+            "log_response_body": "log_response_body",
+            "max_body_chars": "log_max_body_chars",
+        }
+        for src, dst in key_map.items():
+            if src in logging_sec and dst not in flat:
+                flat[dst] = logging_sec[src]
     return flat
 
 

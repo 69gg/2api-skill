@@ -30,6 +30,12 @@ def _clear_settings_cache() -> None:
     clear_settings_cache()
     yield
     clear_settings_cache()
+    # 避免测试间污染 logging handlers（尤其是写文件的 RotatingFileHandler）
+    try:
+        from app.logging_setup import reset_logging_for_tests
+        reset_logging_for_tests()
+    except Exception:  # noqa: BLE001
+        pass
 
 
 @pytest.fixture

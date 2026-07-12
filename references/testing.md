@@ -13,7 +13,9 @@
 
 | 文件 | 覆盖 |
 |---|---|
-| `tests/test_config.py` | toml 加载、段平铺、别名、文件缺失回退默认、lru_cache |
+| `tests/test_config.py` | toml 加载、段平铺、别名、proxy/logging 映射、文件缺失回退默认、lru_cache |
+| `tests/test_http_log.py` | header/body 脱敏、usage 提取、中间件访问日志（耗时/body） |
+| `tests/test_logging_setup.py` | 文件日志开关、轮转目录写入 |
 | `tests/test_account.py` | round-robin、错误分类换号、冷却、增删改、全失效抛错、extra 字段 |
 | `tests/test_tokens.py` | CJK 估算、first_usage、sum_usage |
 | `tests/test_tools.py` | 三级解析、tolerant_parse、strip、directive、拒绝跳过、真流式状态机 |

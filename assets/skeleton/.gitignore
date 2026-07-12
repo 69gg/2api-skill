@@ -4,6 +4,9 @@ config.toml
 account/
 accounts/
 
+# 运行日志（轮转文件）
+logs/
+
 # Python
 .venv/
 __pycache__/

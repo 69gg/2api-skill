@@ -15,6 +15,18 @@ url = ""
 # 注册机代理：CLI / 自动补号 / captcha 浏览器；留空 = 回退到 url；两者都空 = 直连
 registrar_url = ""
 
+# ===== 日志（主程序）=====
+[logging]
+enabled = true               # 是否写入日志文件；false = 仅控制台，不落盘
+dir = "logs"                 # 日志目录（gitignore）
+filename = "gateway.log"     # 主日志文件名；轮转后为 gateway.log.1 …
+level = "INFO"               # DEBUG / INFO / WARNING / ERROR
+max_bytes = 10485760         # 单文件最大字节（默认 10 MiB），超出后轮转
+backup_count = 5             # 轮转保留份数（gateway.log.1 … .N）
+log_request_body = true      # 是否记录请求 body（Authorization 等已脱敏）
+log_response_body = true     # 是否记录响应 body（含流式聚合后的内容，已脱敏/截断）
+max_body_chars = 4000        # body 日志最大字符数
+
 # ===== 上游：目标网站行为（主程序 + 注册机共享）=====
 [upstream]
 # 通用行为参数（与具体网站无关）

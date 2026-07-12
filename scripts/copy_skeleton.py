@@ -32,6 +32,7 @@ REQUIRED_GITIGNORE_LINES: list[str] = [
     ".env",
     "account/",
     "accounts/",
+    "logs/",
     ".venv/",
     "__pycache__/",
     "*.pyc",

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -26,12 +27,17 @@ from app.admin import router as admin_router
 from app.auto_register import start_auto_register, wake_auto_register
 # /FEATURE:registrar
 from app.config import get_settings
+from app.http_log import RequestResponseLogMiddleware
+from app.logging_setup import setup_logging
 from app.upstream import get_provider
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
+    setup_logging(settings)
     # 同步可恢复失效的处理策略与冷却时长
     seconds_map: dict[FailReason, float] = {}
     if settings.cooldown_seconds_quota is not None:
@@ -63,9 +69,20 @@ async def lifespan(app: FastAPI):
     if auto_task is not None:
         pool.set_on_changed(wake_auto_register)
     # /FEATURE:registrar
+    n_all = len(pool.all())
+    n_ok = pool.available_count() if hasattr(pool, "available_count") else n_all
+    logger.info(
+        "startup accounts=%d available=%d proxy=%s log_file=%s timeout=%.0fs",
+        n_all,
+        n_ok,
+        settings.effective_proxy() or "(direct)",
+        f"{settings.log_dir}/{settings.log_filename}" if settings.log_enabled else "(disabled)",
+        settings.request_timeout,
+    )
     try:
         yield
     finally:
+        logger.info("shutdown")
         # FEATURE:registrar
         if auto_task is not None:
             auto_task.cancel()
@@ -78,6 +95,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="{{PLATFORM}}2api", version="0.1.0", lifespan=lifespan)
+app.add_middleware(RequestResponseLogMiddleware)
 
 app.include_router(openai_models_router)
 # FEATURE:chat

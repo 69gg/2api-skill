@@ -21,11 +21,14 @@
 ├──────────────────────────────────────────────────────┤
 │  账号池 / 配置 / 依赖注入 (app/account.py / config.py / deps.py) │
 │  admin (app/admin.py)                                  │
+│  日志：logging_setup + http_log 中间件（脱敏访问日志 / 轮转）   │
 └──────────────────────────────────────────────────────┘
 旁路：registrar/（独立包，单向 import app.account）
+```
 
 **代理**（`[proxy]`）：`url` 给网关 `httpx.AsyncClient`；`registrar_url` 给注册机（空则回退 `url`）；皆空直连。见 `project-conventions.md`。
-```
+
+**日志**（`[logging]`）：`setup_logging` 挂控制台 + 可选 `logs/` 轮转文件；`RequestResponseLogMiddleware` 记录耗时、usage、入站 header/body、出站 body（均脱敏）。`enabled=false` 不落盘。
 
 ## 二、核心数据契约：IREvent
 

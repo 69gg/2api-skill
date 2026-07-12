@@ -72,6 +72,34 @@ def test_proxy_blank_means_direct(tmp_path, monkeypatch):
     assert s.effective_registrar_proxy() is None
 
 
+def test_logging_section_maps_to_log_fields(tmp_path, monkeypatch):
+    cfg = tmp_path / "config.toml"
+    cfg.write_text(
+        "[logging]\n"
+        "enabled = false\n"
+        'dir = "mylogs"\n'
+        'filename = "app.log"\n'
+        'level = "DEBUG"\n'
+        "max_bytes = 12345\n"
+        "backup_count = 3\n"
+        "log_request_body = false\n"
+        "log_response_body = false\n"
+        "max_body_chars = 100\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("TWOAPI_CONFIG", str(cfg))
+    s = get_settings()
+    assert s.log_enabled is False
+    assert s.log_dir == "mylogs"
+    assert s.log_filename == "app.log"
+    assert s.log_level == "DEBUG"
+    assert s.log_max_bytes == 12345
+    assert s.log_backup_count == 3
+    assert s.log_request_body is False
+    assert s.log_response_body is False
+    assert s.log_max_body_chars == 100
+
+
 def test_lru_cache_caches(tmp_path, monkeypatch):
     cfg = tmp_path / "config.toml"
     cfg.write_text("[gateway]\nport = 7000\n", encoding="utf-8")

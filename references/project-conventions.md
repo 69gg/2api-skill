@@ -76,6 +76,7 @@ config.toml
 .env
 account/
 accounts/
+logs/
 .venv/
 __pycache__/
 *.pyc
@@ -93,6 +94,7 @@ scripts/probe_out/
 
 - `config.toml` 忽略；`config.toml.example` **不忽略**；
 - `account/`（或 `accounts/`）忽略，保留 `*.example`；
+- `logs/` 忽略（运行时轮转日志目录）；
 - **`__pycache__/` 与 `*.pyc` 必须存在**；
 - `git_init.sh` 用法：`bash scripts/git_init.sh [目录] [remote]` 或 `bash scripts/git_init.sh --dir <目录> [--remote <url>]`。
 
@@ -101,6 +103,7 @@ scripts/probe_out/
 ```
 [gateway]      # 网关：host/port/api_key
 [proxy]        # 代理：url（默认/网关）+ registrar_url（注册机，空则回退 url）；皆空=直连
+[logging]      # 访问日志：enabled/dir/filename/level/max_bytes/backup_count/body 开关
 [upstream]     # 上游行为：timeout/strategy/chat_url/冷却等
 [registry]     # 账号目录；registrar 启用时含 target_account_count 等
 [admin]        # 管理后台（若 --with-admin）
@@ -108,12 +111,18 @@ scripts/probe_out/
 [captcha]      # 仅注册机 + 实测有 captcha（可选 proxy_url 覆盖）
 ```
 
-主程序读 `[gateway]`/`[proxy]`/`[upstream]`/`[registry]`/`[admin]`；`[email]`/`[captcha]` 仅注册机（注册机也读 `[proxy]`）。未启用的段由 copy_skeleton 裁剪，不要手写回「启用态」占位除非实测需要。
+主程序读 `[gateway]`/`[proxy]`/`[logging]`/`[upstream]`/`[registry]`/`[admin]`；`[email]`/`[captcha]` 仅注册机（注册机也读 `[proxy]`）。未启用的段由 copy_skeleton 裁剪，不要手写回「启用态」占位除非实测需要。
 
 **代理回退链**：
 - 网关上游：`[proxy].url` → 直连
 - 注册机（CLI / 自动补号 / captcha）：CLI `--proxy` → `[proxy].registrar_url` → `[proxy].url` → 直连
 - captcha 额外：`[captcha].proxy_url` 显式配置时优先于上述注册机代理
+
+**日志**（`app/logging_setup.py` + `app/http_log.py`）：
+- `enabled=false` → 不写文件，仍可打控制台；
+- `enabled=true` → `RotatingFileHandler` 写 `{dir}/{filename}`，按 `max_bytes` 轮转、`backup_count` 保留；
+- 中间件记录：入站 headers/body（脱敏）、出站 body（脱敏）、`elapsed_ms`、从响应解析的 `usage`；响应带 `x-request-id`；
+- `/healthz` 跳过访问日志。
 
 ## 六、认证分层
 

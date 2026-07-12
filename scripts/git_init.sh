@@ -60,6 +60,7 @@ REQUIRED_ENTRIES=(
   ".env"
   "account/"
   "accounts/"
+  "logs/"
   ".venv/"
   "__pycache__/"
   "*.pyc"
