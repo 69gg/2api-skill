@@ -1,4 +1,4 @@
-"""配置层测试：toml 加载、段平铺、别名、文件缺失回退默认、lru_cache。"""
+"""配置层测试：toml 加载、段平铺、别名、文件缺失回退默认、lru_cache、代理解析。"""
 from __future__ import annotations
 
 from app.config import Settings, get_settings
@@ -11,6 +11,10 @@ def test_missing_file_returns_defaults(tmp_path, monkeypatch):
     assert s.gateway_api_key == ""
     assert s.admin_auth_key == ""
     assert s.upstream_strategy == "prompt"
+    assert s.proxy_url == ""
+    assert s.registrar_proxy_url == ""
+    assert s.effective_proxy() is None
+    assert s.effective_registrar_proxy() is None
 
 
 def test_flatten_and_aliases(tmp_path, monkeypatch):
@@ -28,6 +32,44 @@ def test_flatten_and_aliases(tmp_path, monkeypatch):
     assert s.port == 9000
     # [email] 段不被主程序读取（无对应字段）
     assert not hasattr(s, "base_url")
+
+
+def test_proxy_section_default_only(tmp_path, monkeypatch):
+    """只配默认代理：网关与注册机都走它。"""
+    cfg = tmp_path / "config.toml"
+    cfg.write_text(
+        '[proxy]\nurl = "http://127.0.0.1:7890"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("TWOAPI_CONFIG", str(cfg))
+    s = get_settings()
+    assert s.proxy_url == "http://127.0.0.1:7890"
+    assert s.registrar_proxy_url == ""
+    assert s.effective_proxy() == "http://127.0.0.1:7890"
+    assert s.effective_registrar_proxy() == "http://127.0.0.1:7890"
+
+
+def test_proxy_section_registrar_overrides(tmp_path, monkeypatch):
+    """注册机代理单独配置时不回落到默认。"""
+    cfg = tmp_path / "config.toml"
+    cfg.write_text(
+        '[proxy]\nurl = "http://default:1"\nregistrar_url = "socks5://reg:2"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("TWOAPI_CONFIG", str(cfg))
+    s = get_settings()
+    assert s.effective_proxy() == "http://default:1"
+    assert s.effective_registrar_proxy() == "socks5://reg:2"
+
+
+def test_proxy_blank_means_direct(tmp_path, monkeypatch):
+    """空白字符串视为未配置，直连。"""
+    cfg = tmp_path / "config.toml"
+    cfg.write_text('[proxy]\nurl = "  "\nregistrar_url = ""\n', encoding="utf-8")
+    monkeypatch.setenv("TWOAPI_CONFIG", str(cfg))
+    s = get_settings()
+    assert s.effective_proxy() is None
+    assert s.effective_registrar_proxy() is None
 
 
 def test_lru_cache_caches(tmp_path, monkeypatch):

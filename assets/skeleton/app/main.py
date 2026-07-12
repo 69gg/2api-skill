@@ -43,7 +43,11 @@ async def lifespan(app: FastAPI):
         seconds=settings.cooldown_seconds,
         seconds_map=seconds_map,
     )
-    http_client = httpx.AsyncClient(timeout=settings.request_timeout)
+    # proxy 未配置时 httpx 直连（proxy=None）
+    http_client = httpx.AsyncClient(
+        timeout=settings.request_timeout,
+        proxy=settings.effective_proxy(),
+    )
     # 加载账号池；为每个账号建独立的 UpstreamProvider（共享 http_client）
     pool = AccountPool.load(Path(settings.account_dir))
     providers: dict[str, object] = {}

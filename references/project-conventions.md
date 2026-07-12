@@ -100,14 +100,20 @@ scripts/probe_out/
 
 ```
 [gateway]      # 网关：host/port/api_key
+[proxy]        # 代理：url（默认/网关）+ registrar_url（注册机，空则回退 url）；皆空=直连
 [upstream]     # 上游行为：timeout/strategy/chat_url/冷却等
 [registry]     # 账号目录；registrar 启用时含 target_account_count 等
 [admin]        # 管理后台（若 --with-admin）
 [email]        # 仅注册机 + 邮件 OTP
-[captcha]      # 仅注册机 + 实测有 captcha
+[captcha]      # 仅注册机 + 实测有 captcha（可选 proxy_url 覆盖）
 ```
 
-主程序读 `[gateway]/[upstream]/[registry]/[admin]`；`[email]`/`[captcha]` 仅注册机。未启用的段由 copy_skeleton 裁剪，不要手写回「启用态」占位除非实测需要。
+主程序读 `[gateway]`/`[proxy]`/`[upstream]`/`[registry]`/`[admin]`；`[email]`/`[captcha]` 仅注册机（注册机也读 `[proxy]`）。未启用的段由 copy_skeleton 裁剪，不要手写回「启用态」占位除非实测需要。
+
+**代理回退链**：
+- 网关上游：`[proxy].url` → 直连
+- 注册机（CLI / 自动补号 / captcha）：CLI `--proxy` → `[proxy].registrar_url` → `[proxy].url` → 直连
+- captcha 额外：`[captcha].proxy_url` 显式配置时优先于上述注册机代理
 
 ## 六、认证分层
 

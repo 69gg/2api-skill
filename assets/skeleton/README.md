@@ -30,7 +30,7 @@ uv sync --extra registrar  # 含注册机依赖
 <!-- /FEATURE:registrar -->
 
 # 2. 配置
-cp config.toml.example config.toml   # 编辑：填上游端点、是否要 api_key/admin key
+cp config.toml.example config.toml   # 编辑：填上游端点、是否要 api_key/admin key、可选 [proxy]
 cp account/main.json.example account/main.json   # 必填字段：name、source_email、created_at
 
 # 3. 运行
@@ -63,6 +63,17 @@ uv run uvicorn app.main:app --host 0.0.0.0 --port 8088
 <!-- FEATURE:admin -->
 - `/admin/*`：未设 `admin.auth_key` 则**整个 admin 关闭**（端点返回 404）；设了则需 Bearer 或 `?auth_key=`。
 <!-- /FEATURE:admin -->
+
+## 代理
+
+在 `config.toml` 的 `[proxy]` 段配置（皆可留空 = 直连）：
+
+| 键 | 用途 | 回退 |
+|---|---|---|
+| `url` | 网关访问上游 | 空 → 直连 |
+| `registrar_url` | 注册机 HTTP / 自动补号 / captcha | 空 → `url` → 直连 |
+
+CLI 注册时还可用 `--proxy` 临时覆盖配置中的注册机代理。
 
 ## 客户端示例
 

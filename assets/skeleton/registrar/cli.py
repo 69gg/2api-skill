@@ -23,17 +23,32 @@ def _build_parser() -> argparse.ArgumentParser:
     ap.add_argument("-n", "--count", type=int, default=1,
                     help="本次注册数量上限（0=无限循环直到 Ctrl+C）")
     ap.add_argument("-w", "--workers", type=int, default=1, help="并发线程数")
-    ap.add_argument("--proxy", default=None, help="HTTP/HTTPS/SOCKS 代理 URL（注册请求与 captcha 共用）")
+    ap.add_argument(
+        "--proxy", default=None,
+        help="覆盖 [proxy]：HTTP/HTTPS/SOCKS 代理 URL（注册请求与 captcha 共用；"
+             "未传则用 config 的 registrar_url → url）",
+    )
     ap.add_argument("--config", default=None, help="config.toml 路径（默认 $TWOAPI_CONFIG 或 config.toml）")
     ap.add_argument("--captcha-method", default=None,
                     help="覆盖 config [captcha].method（semi/cdp/api）")
     return ap
 
 
+def _resolve_cli_proxy(cfg: RegistrarConfig, cli_proxy: str | None) -> str | None:
+    """CLI ``--proxy`` 优先，否则用配置解析结果（registrar → default → 直连）。"""
+    if cli_proxy is not None and str(cli_proxy).strip():
+        return str(cli_proxy).strip()
+    return cfg.effective_proxy()
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     cfg = load_registrar_config(args.config)
-    http = HttpClient(proxy=args.proxy)
+    proxy = _resolve_cli_proxy(cfg, args.proxy)
+    # CLI 覆盖时同步 captcha 浏览器代理（semi 策略）
+    if proxy:
+        cfg.captcha.proxy_url = proxy
+    http = HttpClient(proxy=proxy)
 
     infinite = args.count <= 0
     target = args.count
@@ -45,7 +60,7 @@ def main(argv: list[str] | None = None) -> int:
             def fill(futures: set) -> None:
                 nonlocal submitted
                 while len(futures) < workers and (infinite or submitted < target):
-                    futures.add(pool.submit(_safe_register, cfg, http, args))
+                    futures.add(pool.submit(_safe_register, cfg, http, args, proxy))
                     submitted += 1
 
             futures: set = set()
@@ -69,11 +84,14 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _safe_register(
-    cfg: RegistrarConfig, http: HttpClient, args: argparse.Namespace
+    cfg: RegistrarConfig,
+    http: HttpClient,
+    args: argparse.Namespace,
+    proxy: str | None,
 ) -> tuple[bool, str]:
     """单账号注册的异常包装：失败返回 (False, 错误摘要)。"""
     try:
-        acc = register_one(cfg, http, proxy=args.proxy, captcha_method=args.captcha_method)
+        acc = register_one(cfg, http, proxy=proxy, captcha_method=args.captcha_method)
         return True, f"{acc.source_email} -> account/{acc.name}.json"
     except Exception as exc:  # noqa: BLE001 - 单账号失败不致命
         tail = traceback.format_exc().splitlines()[-1]

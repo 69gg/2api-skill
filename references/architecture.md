@@ -23,6 +23,8 @@
 │  admin (app/admin.py)                                  │
 └──────────────────────────────────────────────────────┘
 旁路：registrar/（独立包，单向 import app.account）
+
+**代理**（`[proxy]`）：`url` 给网关 `httpx.AsyncClient`；`registrar_url` 给注册机（空则回退 `url`）；皆空直连。见 `project-conventions.md`。
 ```
 
 ## 二、核心数据契约：IREvent

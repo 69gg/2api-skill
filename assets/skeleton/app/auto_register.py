@@ -73,13 +73,16 @@ async def _auto_register_loop(
                 need = target - available
                 logger.info("auto_register: %d/%d accounts, registering %d", available, target, need)
                 cfg = load_registrar_config()
-                http = HttpClient()
+                proxy = cfg.effective_proxy()
+                http = HttpClient(proxy=proxy)
                 semaphore = asyncio.Semaphore(workers)
 
                 async def _register_one() -> dict[str, Any] | BaseException:
                     async with semaphore:
                         try:
-                            return await asyncio.to_thread(register_one, cfg, http)
+                            return await asyncio.to_thread(
+                                register_one, cfg, http, proxy=proxy
+                            )
                         except BaseException as exc:  # noqa: BLE001
                             return exc
 

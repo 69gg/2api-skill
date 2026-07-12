@@ -19,6 +19,51 @@ def test_registrar_config_reads_upstream(tmp_path, monkeypatch):
     monkeypatch.setenv("TWOAPI_CONFIG", str(cfg))
     rc = load_registrar_config()
     assert rc.upstream == {"supabase_url": "https://x.supabase.co", "supabase_anon_key": "anon"}
+    assert rc.proxy_url == ""
+    assert rc.effective_proxy() is None
+
+
+def test_registrar_proxy_falls_back_to_default(tmp_path, monkeypatch):
+    """注册机未单独配代理时回退 [proxy].url，并写入 captcha.proxy_url。"""
+    cfg = tmp_path / "config.toml"
+    cfg.write_text(
+        '[proxy]\nurl = "http://gw:7890"\n'
+        '[email]\nbase_url = "https://mail.example.com"\n'
+        '[captcha]\nmethod = "semi"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("TWOAPI_CONFIG", str(cfg))
+    rc = load_registrar_config()
+    assert rc.proxy_url == "http://gw:7890"
+    assert rc.effective_proxy() == "http://gw:7890"
+    assert rc.captcha.proxy_url == "http://gw:7890"
+
+
+def test_registrar_proxy_overrides_default(tmp_path, monkeypatch):
+    cfg = tmp_path / "config.toml"
+    cfg.write_text(
+        '[proxy]\nurl = "http://gw:1"\nregistrar_url = "http://reg:2"\n'
+        '[captcha]\nmethod = "semi"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("TWOAPI_CONFIG", str(cfg))
+    rc = load_registrar_config()
+    assert rc.proxy_url == "http://reg:2"
+    assert rc.captcha.proxy_url == "http://reg:2"
+
+
+def test_captcha_proxy_url_not_overwritten(tmp_path, monkeypatch):
+    """[captcha].proxy_url 显式配置时不被 [proxy] 覆盖。"""
+    cfg = tmp_path / "config.toml"
+    cfg.write_text(
+        '[proxy]\nurl = "http://gw:1"\nregistrar_url = "http://reg:2"\n'
+        '[captcha]\nmethod = "semi"\nproxy_url = "http://captcha:3"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("TWOAPI_CONFIG", str(cfg))
+    rc = load_registrar_config()
+    assert rc.proxy_url == "http://reg:2"
+    assert rc.captcha.proxy_url == "http://captcha:3"
 
 
 class _FakeHttpClient:

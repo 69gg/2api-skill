@@ -1,6 +1,6 @@
 """网关配置：从 config.toml 加载（pydantic.BaseModel + tomllib，无 pydantic-settings）。
 
-``config.toml`` 只放「与账号无关」的配置（网关 / 行为 / 上游 / 注册机）；
+``config.toml`` 只放「与账号无关」的配置（网关 / 行为 / 上游 / 代理 / 注册机）；
 每个账号凭据存 ``account/<name>.json``，由 :mod:`app.account` 管理。
 """
 from __future__ import annotations
@@ -31,6 +31,10 @@ class Settings(BaseModel):
     upstream_chat_url: str = ""  # 上游「发送对话」端点
     upstream_strategy: str = "prompt"  # tool 策略：prompt（注入解析）/ native（上游原生直通）
 
+    # 代理（[proxy] 段）：空 = 直连
+    proxy_url: str = ""  # 默认代理（网关 → 上游）
+    registrar_proxy_url: str = ""  # 注册机代理；空则回退 proxy_url
+
     # 账号凭据目录（相对工作目录；account/<name>.json，gitignored）
     account_dir: str = "account"
 
@@ -48,12 +52,23 @@ class Settings(BaseModel):
     # 管理后台鉴权（/admin/*）；空=关闭 admin 端点（返回 404 隐藏存在）
     admin_auth_key: str = ""
 
+    def effective_proxy(self) -> str | None:
+        """网关上游请求用的代理；未配置返回 ``None``（直连）。"""
+        p = (self.proxy_url or "").strip()
+        return p or None
+
+    def effective_registrar_proxy(self) -> str | None:
+        """注册机用代理：优先 registrar_proxy_url，否则回退 proxy_url；皆空则 ``None``。"""
+        p = (self.registrar_proxy_url or "").strip() or (self.proxy_url or "").strip()
+        return p or None
+
 
 def _flatten_toml(data: dict) -> dict:
-    """平铺 [gateway]/[upstream]/[registry]/[admin] 四段；忽略 [email]/[captcha]（仅注册机用）。
+    """平铺 [gateway]/[upstream]/[registry]/[admin]/[proxy]；忽略 [email]/[captcha]（仅注册机用）。
 
     toml 简短键名映射到 Settings 字段（``api_key`` → ``gateway_api_key``，
-    ``auth_key`` → ``admin_auth_key``）。
+    ``auth_key`` → ``admin_auth_key``；``[proxy].url`` / ``registrar_url`` →
+    ``proxy_url`` / ``registrar_proxy_url``）。
     """
     flat: dict = {}
     for section in ("gateway", "upstream", "registry", "admin"):
@@ -62,6 +77,16 @@ def _flatten_toml(data: dict) -> dict:
         flat["gateway_api_key"] = flat.pop("api_key")
     if "auth_key" in flat and "admin_auth_key" not in flat:
         flat["admin_auth_key"] = flat.pop("auth_key")
+
+    # [proxy] 单独映射，避免裸键 url 与其它段冲突
+    proxy = data.get("proxy") or {}
+    if isinstance(proxy, dict):
+        if "proxy_url" not in flat:
+            flat["proxy_url"] = str(proxy.get("url") or proxy.get("default") or "")
+        if "registrar_proxy_url" not in flat:
+            flat["registrar_proxy_url"] = str(
+                proxy.get("registrar_url") or proxy.get("registrar") or ""
+            )
     return flat
 
 

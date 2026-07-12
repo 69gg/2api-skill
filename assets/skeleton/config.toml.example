@@ -7,6 +7,14 @@ host = "0.0.0.0"
 port = 8088
 api_key = ""                 # 客户端访问 /v1 的 key（Authorization: Bearer <key>）；留空 = 无认证
 
+# ===== 代理（主程序 + 注册机）=====
+[proxy]
+# 默认代理：网关访问上游时使用；留空 = 直连
+# 例：http://127.0.0.1:7890  或  socks5://127.0.0.1:1080
+url = ""
+# 注册机代理：CLI / 自动补号 / captcha 浏览器；留空 = 回退到 url；两者都空 = 直连
+registrar_url = ""
+
 # ===== 上游：目标网站行为（主程序 + 注册机共享）=====
 [upstream]
 # 通用行为参数（与具体网站无关）
@@ -59,7 +67,7 @@ poll_timeout = 120           # 等待验证邮件的最长秒数
 [captcha]
 method = "semi"              # semi（有头浏览器自动 / 手动点）/ cdp（连已开 debug chrome）/ api（打码服务）
 headless = false             # semi 策略：是否无头（多数站点无头过不了，建议 false）
-# proxy_url = ""             # 可选，注册机与 captcha solver 共用
+# proxy_url = ""             # 可选，仅 captcha 覆盖；留空则用 [proxy].registrar_url → url
 # cdp_endpoint = "http://localhost:9222"  # cdp 策略：已开 debug chrome 的 CDP 端点
 # api_provider = "capsolver"              # api 策略：打码服务（capsolver 等）
 # api_key = ""                            # api 策略：打码服务 key

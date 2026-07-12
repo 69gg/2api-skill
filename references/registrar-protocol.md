@@ -104,9 +104,11 @@ uv run python -m registrar -n 3 -w 2 --captcha-method semi
 
 - `-n/--count`：注册数量（0=无限）；
 - `-w/--workers`：并发数（ThreadPoolExecutor）；
-- `--proxy`：可选代理；
+- `--proxy`：可选代理（覆盖 config；未传则用 `[proxy].registrar_url` → `[proxy].url` → 直连）；
 - `--config`：配置文件路径；
 - `--captcha-method`：semi/cdp/api。
+
+代理配置见 `config.toml` 的 `[proxy]` 段与 `references/project-conventions.md`「代理回退链」。
 
 单账号失败不致命（`_safe_register` 包装异常），并发跑满 `-w` 个任务。
 
