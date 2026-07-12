@@ -25,7 +25,11 @@ class Settings(BaseModel):
     request_timeout: float = 120.0  # 单次请求总超时（秒）
     poll_interval: float = 1.2  # 轮询式上游的轮询间隔（秒）
     token_refresh_margin: int = 300  # 凭据到期前多少秒主动刷新
-    tool_call_retries: int = 3  # prompt 模式被拒绝/识破时换角度重试次数（0=不重试）
+    tool_call_retries: int = 3  # prompt 模式被拒绝时换角度重试次数（0=不重试；需 refusal_detect）
+
+    # 可选对抗策略（默认关；copy_skeleton --with-soften-system / --with-refusal-detect 可写 true）
+    soften_system: bool = False  # 客户端 system 软化包装
+    refusal_detect: bool = False  # 拒绝/识破检测 + tool 变体重试 + 解析跳过
 
     # 上游专属占位字段（目标网站的端点/参数在 config.toml.example 的 [upstream] 段扩展）
     upstream_chat_url: str = ""  # 上游「发送对话」端点

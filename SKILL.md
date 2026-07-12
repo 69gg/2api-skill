@@ -21,7 +21,7 @@ license: MIT
 
 **局限（开工前如实告知用户）**：
 - webchat 一般**不暴露原生 function-calling**：tool call 多靠 **prompt 注入 + 文本解析** 模拟（见 `references/tool-calls.md`），命中率取决于上游模型是否配合，复杂 system 身份场景可能识破失败。
-  - **强 system / 身份对抗**：采用六层策略叠加命中率（见 `references/tool-calls.md` 第六章）。**不要承诺 100% tool call 命中**。
+  - **强 system / 身份对抗**：可选启用 system 软化 + 拒绝检测（`copy_skeleton --with-soften-system --with-refusal-detect`，见 `references/tool-calls.md` 第六章）。**默认关闭**；**不要承诺 100% tool call 命中**。
   - **但对外 API 面仍必须支持** `stream` 与 `tools`（见第 2 节第 7–8 条）；不得以上游无原生 FC 为由删掉兼容层。
 - **人机验证（captcha/turnstile）**：能协议化最好；不能则需浏览器 + 打码或人工，**无法保证全自动**。是否启用打码**按实测**决定（见第 8–11 步）。
 - **多模态（图片/文件）**：抓包若见上传接口则**必须**实现；若全程无上传接口，文档写明不支持即可。
@@ -62,7 +62,7 @@ license: MIT
 6. **license MIT**：生成的项目与配置都用 MIT。
 7. **诚实**：token 用量、能力边界如实说明，无真实值则估算并标注，绝不编造。
 8. **API 面：流式 + tool calls（强制）**：启用的 `/v1` 路由必须支持 `stream=true/false`，并接受 `tools`、按协议返回 `tool_calls` / `tool_use` / function_call 帧。上游无原生 FC 时用 prompt 注入实现，**不得删除兼容层**；命中率不承诺 100%。真流式或伪流式（切片 SSE）均可，客户端须见标准 SSE。
-9. **system / tools 实质内容不删改**：客户端 → 上游上下文组装时，system/instructions 与 tools 的**实质指令与 schema 不得删改**。允许：`soften_system` 外层包装、删除纯垃圾元数据行、协议字段名映射、prompt 模式**前置追加** directive（tools 定义须完整写入）、**仅当客户端未传非空 system 时**注入缺省身份提示（声明对外 model id + 禁止提及 webchat 平台，见 `default_identity_system`）。禁止：改写/覆盖已有客户端身份或规则、阉割 parameters、丢弃 tools 列表。
+9. **system / tools 实质内容不删改**：客户端 → 上游上下文组装时，system/instructions 与 tools 的**实质指令与 schema 不得删改**。允许：协议字段名映射、prompt 模式**前置追加** directive（tools 定义须完整写入）、**仅当客户端未传非空 system 时**注入缺省身份提示（`default_identity_system`）。**`soften_system` 软化包装 / 拒绝检测默认关闭**，仅 `copy_skeleton --with-soften-system` / `--with-refusal-detect`（或 config `soften_system`/`refusal_detect=true`）时启用。禁止：改写/覆盖已有客户端身份或规则、阉割 parameters、丢弃 tools 列表。
 10. **reasoning 透传（强制）**：客户端 history 中的 `reasoning_content` / `thinking` / `reasoning` 等不得丢弃；上游若产思维链，parser 必须发 `IREvent(kind="thinking")`，adapter **随响应按各协议标准格式返回**（Chat: `reasoning_content`；Responses: `type=reasoning`；Anthropic: `type=thinking` / `thinking_delta`）。流式随到随发，tool 路径不得丢弃。
 11. **文件上传（条件强制）**：抓包发现 upload / attachment / presigned / base64 文件字段 → **必须**实现 `upload_image`/`upload_file`（或等价）并在对话请求中引用；全程无上传接口 → 文档写明不支持即可。
 
@@ -115,6 +115,7 @@ license: MIT
    **开关一览**（详见 `references/project-conventions.md`）：
    - 路由（默认全开）：`--with-chat/--no-chat`、`--with-responses/--no-responses`、`--with-messages/--no-messages`、`--with-admin/--no-admin`（`/v1/models` 与 `/healthz` 始终保留）
    - 注册机（默认关）：`--with-registrar`、`--with-email-otp`、`--with-captcha`（后两者隐含 registrar）
+   - 对抗策略（默认关）：`--with-soften-system`、`--with-refusal-detect`（写入 config，可运行时改）
    - git（默认关）：`--init-git` / `--no-init-git`、可选 `--git-remote <url>`
 3. 脚本会：复制骨架 → 按开关裁剪路由/文档/配置 → 确保 `.gitignore` 含 `__pycache__/` → 写入 `.2api-skill-features.json` → 若 `--init-git` 则调用 `git_init.sh`。
 4. 若第 0 步用户要 git 但漏了 `--init-git`，可补跑：`bash scripts/git_init.sh --dir <项目> [--remote <url>]`（或位置参数 `bash scripts/git_init.sh <项目> [remote]`）。`git_init` 对标准忽略做「缺则追加」。

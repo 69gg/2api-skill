@@ -33,7 +33,10 @@ max_body_chars = 4000        # body 日志最大字符数
 request_timeout = 120.0      # 单次请求总超时（秒）
 poll_interval = 1.2          # 轮询式上游的轮询间隔（秒）
 token_refresh_margin = 300   # 凭据到期前多少秒主动刷新
-tool_call_retries = 3        # prompt 模式被拒绝时换变体重试次数（0 = 不重试）
+tool_call_retries = 3        # prompt 模式被拒绝时换变体重试次数（0 = 不重试；仅 refusal_detect=true 时生效）
+# 可选对抗策略（默认关；copy_skeleton --with-soften-system / --with-refusal-detect 初始化时写 true）
+soften_system = false        # true：客户端 system 走柔和背景包装（不改实质指令）
+refusal_detect = false       # true：拒绝/识破检测 + tool 指令变体重试 + 解析跳过拒绝文
 strategy = "prompt"          # tool 策略：prompt（注入解析，默认）/ native（上游原生 function-calling 直通）
 # 目标网站专属端点（按抓包结果填）
 chat_url = ""                # 上游「发送对话」端点

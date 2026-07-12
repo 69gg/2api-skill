@@ -15,6 +15,8 @@ def test_missing_file_returns_defaults(tmp_path, monkeypatch):
     assert s.registrar_proxy_url == ""
     assert s.effective_proxy() is None
     assert s.effective_registrar_proxy() is None
+    assert s.soften_system is False
+    assert s.refusal_detect is False
 
 
 def test_flatten_and_aliases(tmp_path, monkeypatch):
@@ -70,6 +72,18 @@ def test_proxy_blank_means_direct(tmp_path, monkeypatch):
     s = get_settings()
     assert s.effective_proxy() is None
     assert s.effective_registrar_proxy() is None
+
+
+def test_soften_and_refusal_flags_from_upstream(tmp_path, monkeypatch):
+    cfg = tmp_path / "config.toml"
+    cfg.write_text(
+        "[upstream]\nsoften_system = true\nrefusal_detect = true\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("TWOAPI_CONFIG", str(cfg))
+    s = get_settings()
+    assert s.soften_system is True
+    assert s.refusal_detect is True
 
 
 def test_logging_section_maps_to_log_fields(tmp_path, monkeypatch):

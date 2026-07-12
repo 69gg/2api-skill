@@ -12,6 +12,7 @@
 - **多账户轮询**与失败自动换号
 - **token 用量**：优先返回上游真实 usage，否则估算
 - **缺省身份**：请求未带 system / instructions 时，自动注入「真实 model id + 勿提及平台」提示
+- **可选对抗策略**（默认关，可在 `config.toml` 打开）：`soften_system`（system 软化）、`refusal_detect`（拒绝检测 + tool 变体重试）
 - **访问日志**：耗时 / token 用量 / 入站 header·body / 出站 body（脱敏），可写入 `logs/` 并按大小轮转
 <!-- FEATURE:admin -->
 - **/admin 管理后台**（可选，独立鉴权）

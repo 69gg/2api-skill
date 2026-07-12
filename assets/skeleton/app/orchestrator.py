@@ -59,7 +59,9 @@ async def stream_with_retry(
     if max_retries is None:
         from app.config import get_settings
 
-        max_retries = get_settings().tool_call_retries
+        settings = get_settings()
+        # 拒绝重试仅在 refusal_detect 开启时生效；否则只跑一轮
+        max_retries = settings.tool_call_retries if settings.refusal_detect else 0
     max_attempts = 1 + (max_retries if has_tools and max_retries > 0 else 0)
     known = {t.name for t in tools} if has_tools else set()
 

@@ -25,19 +25,32 @@ REFUSAL_PHRASES: tuple[str, ...] = (
 
 
 def looks_refusal(text: str) -> bool:
-    """文本是否命中拒绝 / 识破措辞（子串匹配，大小写不敏感）。"""
+    """文本是否命中拒绝 / 识破措辞（子串匹配，大小写不敏感）。
+
+    纯字符串检测，不读配置。调用方应先确认 :func:`refusal_detect_enabled`。
+    """
     if not text:
         return False
     low = text.lower()
     return any(p in low for p in REFUSAL_PHRASES)
 
 
+def refusal_detect_enabled() -> bool:
+    """是否启用拒绝检测（配置 ``refusal_detect``，默认 false）。"""
+    from app.config import get_settings
+
+    return bool(get_settings().refusal_detect)
+
+
 def is_refusal(text: str, *, has_tools: bool) -> bool:
     """判定一次 agent 回复是否构成「拒绝 / 识破」需要重试。
 
+    - 配置 ``refusal_detect=false``（默认）→ 永不判拒绝。
     - 无 tools 的纯对话请求不判拒绝（agent 拒绝可能是合理的，如越界内容）。
     - 有 tools 的请求命中拒绝措辞 → True（需重试换 tool 指令变体）。
     """
+    if not refusal_detect_enabled():
+        return False
     if not has_tools or not text:
         return False
     return looks_refusal(text)

@@ -282,7 +282,10 @@ def parse_tool_calls(text: str, known_names: set[str] | None = None) -> list[Par
     - 裸 JSON：仅当传入 ``known_names`` 且 name 命中白名单、非数据文档、长度 ≤600 时才采纳。
     - 同名同参数的重复调用去重。
     """
-    if looks_refusal(text):
+    # 拒绝跳过仅在 refusal_detect=true 时启用（默认关，避免误伤正常含 "I can't" 的回复）
+    from app.refusal import refusal_detect_enabled
+
+    if refusal_detect_enabled() and looks_refusal(text):
         return []
     calls: list[ParsedToolCall] = []
     spans: set[tuple[int, int]] = set()

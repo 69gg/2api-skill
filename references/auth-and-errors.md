@@ -67,7 +67,7 @@ cooldown_seconds_quota = 3600.0      # QUOTA_EXHAUSTED 覆盖值（可选）
 ### 与 orchestrator 重试正交
 
 - `deps._RetryingClient`：账号级失效（认证/额度/封号）→ 503 换号。
-- `orchestrator.stream_with_retry`：语义级拒绝（agent 不愿调工具）→ 换 tool 指令变体重试。
+- `orchestrator.stream_with_retry`：语义级拒绝（agent 不愿调工具）→ 换 tool 指令变体重试（需 `refusal_detect=true`，默认关）。
 两者独立，分别处理不同类型的失败。
 
 ## 三、账号池轮询（`app/account.py`）

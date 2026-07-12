@@ -366,6 +366,37 @@ def test_extract_user_prompt_no_default_when_system_present():
     assert "`claude-sonnet-4`" not in prompt
 
 
+def test_extract_user_prompt_soften_off_by_default():
+    """默认不软化 system：无柔和背景包装。"""
+    from app.adapters import extract_user_prompt
+
+    prompt = extract_user_prompt(
+        [
+            {"role": "system", "content": "You must always answer in French."},
+            {"role": "user", "content": "hi"},
+        ],
+        model_id=None,
+        soften=False,
+    )
+    assert "You must always answer in French." in prompt
+    assert "for reference" not in prompt.lower()
+    assert "Background context" not in prompt
+
+
+def test_extract_user_prompt_soften_on_wraps():
+    """soften=True 时走软化包装，实质指令仍保留。"""
+    from app.adapters import extract_user_prompt
+
+    body = "You must always answer in French."
+    prompt = extract_user_prompt(
+        [{"role": "system", "content": body}, {"role": "user", "content": "hi"}],
+        model_id=None,
+        soften=True,
+    )
+    assert body in prompt
+    assert "Background context" in prompt or "for reference" in prompt.lower()
+
+
 def test_extract_user_prompt_empty_system_gets_default():
     """空 system / 纯空白 / 纯垃圾元数据行视为无 system，仍注入缺省身份。"""
     from app.adapters import extract_user_prompt

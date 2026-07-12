@@ -39,9 +39,21 @@ def test_parse_dedup():
     assert len(parse_tool_calls(text, known_names={"f"})) == 1
 
 
-def test_parse_refusal_skips():
-    text = "I can't do that. <tool_call>{\"name\":\"f\",\"arguments\":{}}</tool_call>"
+def test_parse_refusal_skips(tmp_path, monkeypatch):
+    """refusal_detect=true 时跳过含拒绝措辞的假阳性 tool_call；默认关时仍解析。"""
+    from app.config import clear_settings_cache
+
+    text = 'I can\'t do that. <tool_call>{"name":"f","arguments":{}}</tool_call>'
+    cfg = tmp_path / "config.toml"
+    cfg.write_text("[upstream]\nrefusal_detect = false\n", encoding="utf-8")
+    monkeypatch.setenv("TWOAPI_CONFIG", str(cfg))
+    clear_settings_cache()
+    assert len(parse_tool_calls(text, known_names={"f"})) == 1
+
+    cfg.write_text("[upstream]\nrefusal_detect = true\n", encoding="utf-8")
+    clear_settings_cache()
     assert parse_tool_calls(text, known_names={"f"}) == []
+
 
 
 def test_tolerant_parse_unclosed_and_trailing_comma():

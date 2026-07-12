@@ -274,6 +274,31 @@ def write_features_manifest(dest: Path, features: dict[str, Any]) -> None:
     )
 
 
+def apply_behavior_config(dest: Path, features: dict[str, bool]) -> None:
+    """按初始化 flag 写入 config.toml.example 的 soften_system / refusal_detect。
+
+    骨架默认均为 false；仅当 ``--with-soften-system`` / ``--with-refusal-detect`` 时改为 true。
+    运行时仍可在 config.toml 手动改。
+    """
+    cfg = dest / "config.toml.example"
+    if not cfg.is_file():
+        return
+    text = cfg.read_text(encoding="utf-8")
+    soften = "true" if features.get("soften-system") else "false"
+    refusal = "true" if features.get("refusal-detect") else "false"
+    text = re.sub(
+        r"(?m)^(soften_system\s*=\s*)\S+",
+        rf"\g<1>{soften}",
+        text,
+    )
+    text = re.sub(
+        r"(?m)^(refusal_detect\s*=\s*)\S+",
+        rf"\g<1>{refusal}",
+        text,
+    )
+    cfg.write_text(text, encoding="utf-8")
+
+
 def run_git_init(dest: Path, skill_root: Path, remote: str | None) -> None:
     script = skill_root / "scripts" / "git_init.sh"
     cmd = ["bash", str(script), str(dest)]
@@ -335,6 +360,24 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     ap.add_argument("--no-captcha", dest="captcha", action="store_false")
 
+    # 可选对抗策略（默认关；写入 config.toml.example 的 soften_system / refusal_detect）
+    ap.add_argument(
+        "--with-soften-system",
+        dest="soften_system",
+        action="store_true",
+        default=False,
+        help="启用 system prompt 软化包装（默认关）",
+    )
+    ap.add_argument("--no-soften-system", dest="soften_system", action="store_false")
+    ap.add_argument(
+        "--with-refusal-detect",
+        dest="refusal_detect",
+        action="store_true",
+        default=False,
+        help="启用拒绝/识破检测与 tool 指令变体重试（默认关）",
+    )
+    ap.add_argument("--no-refusal-detect", dest="refusal_detect", action="store_false")
+
     # git
     ap.add_argument(
         "--init-git",
@@ -377,6 +420,8 @@ def main() -> int:
         "registrar": registrar,
         "email-otp": email_otp and registrar,
         "captcha": captcha and registrar,
+        "soften-system": bool(args.soften_system),
+        "refusal-detect": bool(args.refusal_detect),
     }
 
     platform = args.platform
@@ -409,6 +454,7 @@ def main() -> int:
     enabled = _enabled_set(features)
     apply_feature_blocks(dest, enabled)
     prune_files(dest, features)
+    apply_behavior_config(dest, features)
     ensure_gitignore(dest / ".gitignore")
 
     manifest: dict[str, Any] = {

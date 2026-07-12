@@ -129,16 +129,24 @@ def extract_user_prompt(
     messages: list[dict[str, Any]],
     *,
     model_id: str | None = None,
+    soften: bool | None = None,
 ) -> str:
     """把 messages 拍平成发给上游的单条用户消息（带角色与 system 前缀）。
 
-    逆向场景下上游 thread 通常一次性，故把整段历史压成一条消息。system 经软化包装；
-    assistant 历史工具调用渲染成 ``<tool_call>`` 围栏（few-shot）；tool 角色自然化为观测。
+    逆向场景下上游 thread 通常一次性，故把整段历史压成一条消息。
+    system 仅在 ``soften=True``（或配置 ``soften_system=true``）时做软化包装；
+    默认关闭，原样透传。assistant 历史工具调用渲染成 ``<tool_call>`` 围栏（few-shot）；
+    tool 角色自然化为观测。
 
     若客户端未传任何非空 system，且提供了 ``model_id``，则前置注入缺省身份提示
     （声明真实 model id、禁止提及平台；见 :func:`default_identity_system`）。有客户端
     system 时不注入、不覆盖。
     """
+    if soften is None:
+        from app.config import get_settings
+
+        soften = bool(get_settings().soften_system)
+
     parts: list[str] = []
     # 缺省身份：不走 soften_system（本身不是客户端硬 system，无需弱化）
     if model_id and not _has_nonempty_system(messages):
@@ -151,10 +159,13 @@ def extract_user_prompt(
 
         if role == "system":
             content = flatten_text(m.get("content"))
-            softened = soften_system(content, lang=_lang_of(content))
-            if not softened:
-                continue  # 空 / 纯垃圾 system 不写入（避免占位空段）
-            parts.append(f"{cot_prefix}{softened}")
+            if soften:
+                body = soften_system(content, lang=_lang_of(content))
+            else:
+                body = content.strip()
+            if not body:
+                continue  # 空 system 不写入（避免占位空段）
+            parts.append(f"{cot_prefix}{body}")
         elif role == "assistant":
             body = flatten_text(m.get("content"))
             tc_jsons = _assistant_tool_call_jsons(m)
