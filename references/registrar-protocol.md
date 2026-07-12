@@ -12,7 +12,7 @@
 |---|---|---|
 | 需要注册机 | `--with-registrar` | 保留 `registrar/`、相关测试与 README 节 |
 | 注册需邮件 OTP | `--with-email-otp` | `[email]` + poll_code；PROTOCOL 第四节填正则 |
-| 注册只需邮箱、无验证码 | `--no-email-otp` | 不启用收件；**随便编合规邮箱**；PROTOCOL 第四节 `N/A` |
+| 注册只需邮箱、无验证码 | `--no-email-otp` | 不启用收件；``generate_random_email()`` 高熵 localpart + **多域名随机轮换**；PROTOCOL 第四节 `N/A` |
 | 有 captcha/turnstile | `--with-captcha` | `[captcha]` + semi/cdp/api |
 | 无人机验证 | `--no-captcha` | 纯协议；PROTOCOL 第二节写无 captcha |
 
@@ -84,8 +84,11 @@ BODY_RE = re.compile(r"letter-spacing[^>]*>\s*(\d{6})")
 
 ```text
 1. 准备邮箱：
-   - 需要 OTP → create_email() 拿临时邮箱 + jwt
-   - 无需 OTP → 使用任意合规邮箱字符串（可本地生成）
+   - 需要 OTP（配置了 `[email].base_url`）→ `create_email()` 拿临时邮箱 + jwt
+   - 无需 OTP → `generate_random_email()` 本地生成：
+     - **高熵 localpart**（`secrets`，字母开头 + 字母数字 + hex 后缀）
+     - **多域名随机**：从内置消费级域名池（gmail/outlook/proton/…）每次随机挑一个，**禁止整批共用同一 domain**
+     - 若配置了 `[email].domain` 则固定该域（兼容旧行为）；留空走多域池
 2. （若有 captcha）solve_captcha() → 拿 token
 3. 注册请求序列（按目标站抓包结果填）：
    - （若有 OTP）send OTP → poll_code() → verify OTP
@@ -94,7 +97,7 @@ BODY_RE = re.compile(r"letter-spacing[^>]*>\s*(\d{6})")
 5. 写盘 account/<name>.json（用邮箱 localpart 命名，重名加 -2/-3）
 ```
 
-`pipeline.py` 是编排骨架，注册步骤（按目标站定制）由你填入；`email_client.py`/`http_client.py` 已通用写全。无 OTP 时不要调用 poll_code。
+`pipeline.py` 是编排骨架，注册步骤（按目标站定制）由你填入；`email_client.py`/`http_client.py` 已通用写全。无 OTP 时不要调用 `poll_code`，用 `generate_random_email` 即可。
 
 ## 五、CLI（`registrar/cli.py`）
 

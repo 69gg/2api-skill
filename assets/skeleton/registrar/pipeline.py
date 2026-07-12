@@ -1,7 +1,11 @@
 """注册流程编排（骨架 + 占位）。
 
 注册步骤（按目标站抓包结果填入）：
-    create_email → solve_captcha(若需) → 注册请求序列（send-otp/verify 等）→ 提取凭据 → 写盘 account/<name>.json
+    准备邮箱 → solve_captcha(若需) → 注册请求序列 → 提取凭据 → 写盘 account/<name>.json
+
+邮箱：
+- 需要 OTP：``create_email``（cf-temp-email）
+- 无需 OTP：``generate_random_email``（高熵 localpart + 多域名随机，不固定同一 domain）
 
 实现要点见 references/registrar-protocol.md。本函数提供编排骨架，具体步骤由你填入 TODO。
 """
@@ -12,9 +16,14 @@ import time
 from pathlib import Path
 from typing import Any
 
-from registrar.email_client import create_email  # poll_code 在下方 TODO 用
+from registrar.email_client import create_email, generate_random_email  # poll_code 在下方 TODO 用
 from registrar.http_client import HttpClient
 from registrar.models import RegistrarConfig
+
+
+def _needs_email_otp(cfg: RegistrarConfig) -> bool:
+    """是否走临时邮箱 + OTP：配置了 ``[email].base_url`` 即视为需要收件。"""
+    return bool((cfg.email.base_url or "").strip())
 
 
 def register_one(
@@ -28,15 +37,25 @@ def register_one(
 
     成功后写入 account/<name>.json。失败抛异常（由 cli._safe_register 包装）。
     """
-    # 1. 创建临时邮箱
-    email = create_email(
-        http, cfg.email.base_url,
-        admin_auth=cfg.email.admin_auth,
-        custom_auth=cfg.email.custom_auth,
-        domain=cfg.email.domain,
-    )
-    address = email["address"]
-    jwt = email["jwt"]  # noqa: F841 - 后续 poll_code 用；见下方 TODO 占位
+    _ = proxy, captcha_method  # captcha / 代理在填入目标站逻辑时使用
+
+    # 1. 准备邮箱
+    jwt = ""
+    if _needs_email_otp(cfg):
+        # 需要 OTP：临时邮箱服务创建可收件地址
+        email = create_email(
+            http, cfg.email.base_url,
+            admin_auth=cfg.email.admin_auth,
+            custom_auth=cfg.email.custom_auth,
+            domain=cfg.email.domain,
+        )
+        address = email["address"]
+        jwt = email["jwt"]  # noqa: F841 - 后续 poll_code 用；见下方 TODO 占位
+    else:
+        # 无需 OTP：本地随机合规邮箱（多域名轮换，勿写死单一 domain）
+        # 若 [email].domain 配了单域会固定该域；留空则从内置多域池随机
+        fixed = (cfg.email.domain or "").strip() or None
+        address = generate_random_email(domain=fixed)
 
     # 2. （若有 captcha）求解 captcha token
     # from registrar.captcha import solve
@@ -44,7 +63,7 @@ def register_one(
     # TODO: 按目标站抓包结果填入 captcha sitekey 与 URL（见 references/registrar-protocol.md）
 
     # 3. 注册请求序列（按目标站抓包填入）
-    # TODO: send-otp → poll_code → verify → 拿登录态 cookie/token
+    # TODO: （若 OTP）send-otp → poll_code → verify；否则直接 register
     # 示例（伪代码）：
     # http.post_json(f"{BASE}/otp/send", {"email": address, "captcha_token": captcha_token})
     # code = poll_code(http, cfg.email.base_url, jwt=jwt, custom_auth=cfg.email.custom_auth,
@@ -52,7 +71,8 @@ def register_one(
     # resp = http.post_json(f"{BASE}/otp/verify", {"email": address, "otp": code})
     # credentials = resp["headers"]["Set-Cookie"]  # 或 resp 里的 token
     raise NotImplementedError(
-        "实现目标站的注册请求序列：create_email → solve_captcha(若需) → send-otp → poll_code → verify → 提取凭据。"
+        "实现目标站的注册请求序列：准备邮箱 → solve_captcha(若需) → "
+        "（OTP 则 send-otp/poll_code/verify，否则直接 register）→ 提取凭据。"
         "见 references/registrar-protocol.md 与 registrar/PROTOCOL.md。"
     )
 

@@ -42,8 +42,8 @@
 - 验证码长度：`<6>`（如不同请改）
 <!-- /FEATURE:email-otp -->
 <!-- FEATURE:no-email-otp -->
-- 状态：N/A（注册无需邮件验证码；可用任意合规邮箱填表）
-- 说明：不启用临时邮箱收件 / `poll_code`
+- 状态：N/A（注册无需邮件验证码）
+- 说明：不启用临时邮箱收件 / `poll_code`；用 `generate_random_email()`（高熵 localpart + 多域名随机轮换）填表
 <!-- /FEATURE:no-email-otp -->
 
 ## 五、凭据提取
