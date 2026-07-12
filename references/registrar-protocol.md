@@ -1,8 +1,24 @@
 # 注册机协议与实现
 
-> 对应 SKILL.md 第 8-11 步。代码在 `app/.../registrar/`（骨架在 `assets/skeleton/registrar/`）。本节给出 cf-temp-email API、验证码正则、captcha 三策略。
+> 对应 SKILL.md 第 8-11 步。代码在 `registrar/`（骨架在 `assets/skeleton/registrar/`）。
+>
+> **按实测启用**：邮件 OTP、captcha 是否接入由注册流程观察决定，禁止未观察就默认全开。
+> 初始化时用 `copy_skeleton --with-registrar [--with-email-otp] [--with-captcha]` 控制目录与文档占位。
+> `PROTOCOL.md` **节号固定**；未启用能力填 `N/A`，不要删节。
+
+## 〇、能力开关（与 copy_skeleton 对齐）
+
+| 实测 | copy_skeleton | 行为 |
+|---|---|---|
+| 需要注册机 | `--with-registrar` | 保留 `registrar/`、相关测试与 README 节 |
+| 注册需邮件 OTP | `--with-email-otp` | `[email]` + poll_code；PROTOCOL 第四节填正则 |
+| 注册只需邮箱、无验证码 | `--no-email-otp` | 不启用收件；**随便编合规邮箱**；PROTOCOL 第四节 `N/A` |
+| 有 captcha/turnstile | `--with-captcha` | `[captcha]` + semi/cdp/api |
+| 无人机验证 | `--no-captcha` | 纯协议；PROTOCOL 第二节写无 captcha |
 
 ## 一、cf-temp-email（Cloudflare 临时邮箱）API
+
+> 仅当需要邮件 OTP 时使用本节。无 OTP 时跳过，勿强行要求用户部署临时邮箱。
 
 收件箱用开源项目 [dreamhunter2333/cloudflare_temp_email](https://github.com/dreamhunter2333/cloudflare_temp_email)。本节给出可直接照抄的端点与鉴权。
 
@@ -67,17 +83,18 @@ BODY_RE = re.compile(r"letter-spacing[^>]*>\s*(\d{6})")
 ## 四、注册流程编排（`registrar/pipeline.py:register_one`）
 
 ```text
-1. create_email() → 拿临时邮箱地址 + jwt
+1. 准备邮箱：
+   - 需要 OTP → create_email() 拿临时邮箱 + jwt
+   - 无需 OTP → 使用任意合规邮箱字符串（可本地生成）
 2. （若有 captcha）solve_captcha() → 拿 token
 3. 注册请求序列（按目标站抓包结果填）：
-   - send OTP → 拿 nonce
-   - poll_code() → 从邮箱取验证码（用上面的正则）
-   - verify OTP → 拿登录态 cookie/token
+   - （若有 OTP）send OTP → poll_code() → verify OTP
+   - 否则按抓包序列直接注册/登录拿凭据
 4. （可选）拉取项目信息（如 promptql 的 project_id）
 5. 写盘 account/<name>.json（用邮箱 localpart 命名，重名加 -2/-3）
 ```
 
-`pipeline.py` 是编排骨架，注册步骤（按目标站定制）由你填入；`email_client.py`/`http_client.py` 已通用写全。
+`pipeline.py` 是编排骨架，注册步骤（按目标站定制）由你填入；`email_client.py`/`http_client.py` 已通用写全。无 OTP 时不要调用 poll_code。
 
 ## 五、CLI（`registrar/cli.py`）
 

@@ -1,10 +1,50 @@
 #!/usr/bin/env bash
-# 初始化 git 仓库：init + 分支 main + 确保 .gitignore + 约定式首提交。
-# 用法： bash scripts/git_init.sh [项目目录] [可选远程地址]
+# 初始化 git 仓库：init + 分支 main + 确保标准 .gitignore（缺则追加）+ 约定式首提交。
+#
+# 用法：
+#   bash scripts/git_init.sh [项目目录] [可选远程地址]
+#   bash scripts/git_init.sh --dir <项目目录> [--remote <url>]
+#
+# 标准忽略必含 __pycache__/ 等；已有 .gitignore 时只追加缺失项。
 set -euo pipefail
 
-DIR="${1:-.}"
-REMOTE="${2:-}"
+DIR="."
+REMOTE=""
+POSITIONAL=()
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --dir)
+      DIR="${2:?--dir 需要参数}"
+      shift 2
+      ;;
+    --remote)
+      REMOTE="${2:?--remote 需要参数}"
+      shift 2
+      ;;
+    --help|-h)
+      echo "用法: bash scripts/git_init.sh [项目目录] [远程地址]"
+      echo "      bash scripts/git_init.sh --dir <目录> [--remote <url>]"
+      exit 0
+      ;;
+    -*)
+      echo "未知选项: $1" >&2
+      exit 1
+      ;;
+    *)
+      POSITIONAL+=("$1")
+      shift
+      ;;
+  esac
+done
+
+if [ ${#POSITIONAL[@]} -ge 1 ]; then
+  DIR="${POSITIONAL[0]}"
+fi
+if [ ${#POSITIONAL[@]} -ge 2 ]; then
+  REMOTE="${POSITIONAL[1]}"
+fi
+
 cd "$DIR"
 
 [ -d .git ] || git init -q
@@ -14,24 +54,52 @@ if ! git symbolic-ref --quiet HEAD 2>/dev/null | grep -q "refs/heads/main"; then
   git symbolic-ref HEAD refs/heads/main 2>/dev/null || git checkout -q -b main 2>/dev/null || true
 fi
 
-# 若无 .gitignore，写入标准忽略
+# 标准忽略条目（缺则追加；必含 __pycache__/）
+REQUIRED_ENTRIES=(
+  "config.toml"
+  ".env"
+  "account/"
+  "accounts/"
+  ".venv/"
+  "__pycache__/"
+  "*.pyc"
+  ".pytest_cache/"
+  ".ruff_cache/"
+  ".mypy_cache/"
+  "*.egg-info/"
+  "dist/"
+  "build/"
+  "/tmp/"
+  "scripts/probe_out/"
+)
+
 if [ ! -f .gitignore ]; then
-  cat > .gitignore <<'EOF'
-config.toml
-.env
-account/
-accounts/
-.venv/
-__pycache__/
-*.pyc
-.pytest_cache/
-.ruff_cache/
-.mypy_cache/
-*.egg-info/
-dist/
-build/
-/tmp/
-EOF
+  {
+    echo "# 凭据与本地配置（勿提交）"
+    printf '%s\n' "${REQUIRED_ENTRIES[@]}"
+  } > .gitignore
+else
+  missing=()
+  for e in "${REQUIRED_ENTRIES[@]}"; do
+    if ! grep -qxF "$e" .gitignore 2>/dev/null; then
+      missing+=("$e")
+    fi
+  done
+  if [ ${#missing[@]} -gt 0 ]; then
+    {
+      echo ""
+      echo "# ensured by 2api-skill git_init"
+      printf '%s\n' "${missing[@]}"
+    } >> .gitignore
+  fi
+fi
+
+# 再次硬性确认 __pycache__/
+if ! grep -qxF "__pycache__/" .gitignore 2>/dev/null; then
+  echo "__pycache__/" >> .gitignore
+fi
+if ! grep -qxF "*.pyc" .gitignore 2>/dev/null; then
+  echo "*.pyc" >> .gitignore
 fi
 
 git add -A

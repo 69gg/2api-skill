@@ -95,10 +95,11 @@ class IREvent:
 
 ## 五、可插拔接口（核心解耦点）
 
-- **adapter 层**：`extract_user_prompt` 把 messages 拍平成单条 prompt（system 软化 + assistant 历史 tool_call 渲染成围栏 few-shot）；`flatten_text` 把 content block → 纯文本保留 thinking/reasoning。
+- **adapter 层**：`extract_user_prompt` 把 messages 拍平成单条 prompt（system **软化包装但不删改实质** + assistant 历史 tool_call 渲染成围栏 few-shot）；`flatten_text` 把 content block → 纯文本并**保留** thinking/reasoning。客户端 tools 定义完整进入 prompt/native 路径。
 - **orchestrator**：duck-type client，不依赖具体上游（`stream(prompt, model_id)`）。
 - **deps**：`_RetryingClient` 捕获失效 → `classify_failure` → `FailReason` → `mark_failed`，换号对外透明。
 - **换上游时只需改 `app/upstream/`**（其余 config/account/IREvent/orchestrator/adapters/admin/tools/tokens/streaming 不变）。
+- **API 面**：启用的路由必须支持 stream + tools（见 `api-endpoints.md`）；初始化路由集由 `copy_skeleton` 开关决定。
 
 ## 六、参考实现
 

@@ -1,6 +1,9 @@
 # 流式实现
 
 > SSE 格式、warmup/guard 双缓冲、safe_sse_stream。代码在 `app/streaming.py` 与各 adapter。
+>
+> **API 面必须**：启用的 chat/responses/messages 路由必须支持 `stream=true` 与 `stream=false`。
+> 上游真流式则逐 token 转发；上游整块返回则**伪流式**切片为 SSE——二者都是合法实现，客户端须看到标准 SSE 帧。
 
 ## 一、SSE 帧格式
 

@@ -47,7 +47,7 @@ ln -s ~/projects/2api-skill ~/.claude/skills/2api-skill
 
 > "帮我把 https://xxx.com 这个网页聊天逆向成本地 OpenAI 兼容 API"
 
-agent 会按 `SKILL.md` 的 0–12 步工作流执行：询问需求 → 抓包 → curl 验证 → 初始化项目 → 编写 `/v1`+`/admin` → 测试 → 询问是否写注册机 → （注册机）→ 收尾。
+agent 会按 `SKILL.md` 的 0–12 步工作流执行：询问需求 → 抓包 → curl 验证 → **用 `scripts/copy_skeleton.py`（功能开关：路由 / 注册机 / email-otp / captcha / `--init-git`）初始化** → 编写 `/v1`+`/admin` → 测试 → 询问是否写注册机 → （按实测启用 OTP/打码）→ 收尾。
 
 ## 目录结构
 
@@ -65,9 +65,11 @@ agent 会按 `SKILL.md` 的 0–12 步工作流执行：询问需求 → 抓包 
 本 skill 生成的 2api 项目遵循：
 
 - **命名**：默认 `<平台>2api`（如 `grok2api`、`promptql2api`）。
-- **README 致谢**：项目 README 末尾含 `> 本项目使用 [2api-skill](https://github.com/69gg/2api-skill) 辅助制作`。
+- **初始化**：必须用 `scripts/copy_skeleton.py`，禁止手写骨架；开关覆盖路由、注册机能力、是否 `--init-git`。
+- **README 致谢**：项目 README 末尾含 `> 本项目使用 [2api-skill](https://github.com/69gg/2api-skill) 辅助制作`；README 保持用户运维向。
+- **API 面**：启用的 `/v1` 路由支持流式/非流式与 tool calls；system/tools 实质不删改；reasoning 透传；有上传接口则实现上传。
 - **认证分层**：`/v1` 不设 key 则无认证；`/admin` 不设 key 则整个 admin 关闭（404）。
-- **git 忽略**：`config.toml` 与 `account/`（凭据）忽略，`config.toml.example` 与 `*.example` 入库。
+- **git 忽略**：`config.toml` 与 `account/`（凭据）忽略，`config.toml.example` 与 `*.example` 入库；**必须含 `__pycache__/`**。
 - **license**：MIT。
 
 ## 参考项目

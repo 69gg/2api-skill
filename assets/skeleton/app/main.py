@@ -9,12 +9,22 @@ import httpx
 from fastapi import FastAPI
 
 from app.account import AccountPool, FailReason, set_cooldown_policy
-from app.adapters.anthropic_messages import router as anthropic_router
-from app.adapters.openai_chat import router as openai_chat_router
 from app.adapters.openai_models import router as openai_models_router
+# FEATURE:chat
+from app.adapters.openai_chat import router as openai_chat_router
+# /FEATURE:chat
+# FEATURE:responses
 from app.adapters.openai_responses import router as openai_responses_router
+# /FEATURE:responses
+# FEATURE:messages
+from app.adapters.anthropic_messages import router as anthropic_router
+# /FEATURE:messages
+# FEATURE:admin
 from app.admin import router as admin_router
+# /FEATURE:admin
+# FEATURE:registrar
 from app.auto_register import start_auto_register, wake_auto_register
+# /FEATURE:registrar
 from app.config import get_settings
 from app.upstream import get_provider
 
@@ -43,29 +53,41 @@ async def lifespan(app: FastAPI):
     app.state.http_client = http_client
     app.state.pool = pool
     app.state.providers = providers
+    # FEATURE:registrar
     auto_task = start_auto_register(pool, settings)
     app.state.auto_register_task = auto_task
     if auto_task is not None:
         pool.set_on_changed(wake_auto_register)
+    # /FEATURE:registrar
     try:
         yield
     finally:
+        # FEATURE:registrar
         if auto_task is not None:
             auto_task.cancel()
             try:
                 await auto_task
             except asyncio.CancelledError:
                 pass
+        # /FEATURE:registrar
         await http_client.aclose()
 
 
 app = FastAPI(title="{{PLATFORM}}2api", version="0.1.0", lifespan=lifespan)
 
 app.include_router(openai_models_router)
+# FEATURE:chat
 app.include_router(openai_chat_router)
+# /FEATURE:chat
+# FEATURE:responses
 app.include_router(openai_responses_router)
+# /FEATURE:responses
+# FEATURE:messages
 app.include_router(anthropic_router)
+# /FEATURE:messages
+# FEATURE:admin
 app.include_router(admin_router)
+# /FEATURE:admin
 
 
 @app.get("/healthz")

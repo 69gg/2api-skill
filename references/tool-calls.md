@@ -1,6 +1,10 @@
 # tool call 实现
 
 > webchat 一般不暴露原生 function-calling，靠 prompt 注入 + 文本解析模拟。代码在 `app/tools.py`。
+>
+> **API 面必须**：启用的 `/v1` 路由必须接受 `tools` 并按协议返回 tool 调用帧。上游无原生 FC 时用 prompt 模式实现，**不得删除兼容层**。命中率不承诺 100%。
+>
+> **tools 实质不删改**：客户端 tools 的 name/description/parameters 须完整进入 directive 或 native 载荷；禁止阉割 schema 或丢弃列表。仅允许协议层字段名映射（如 `function` 包一层）。
 
 ## 一、双模策略
 
@@ -113,15 +117,15 @@ adapter 收到 IREvent(kind="text") 增量时：
 - **拒绝感知**：文本命中拒绝措辞时跳过解析，避免把拒绝说明里的示例块误当 tool call。
 - **去重**：同名同参数只保留一次。
 
-### 6.6 清洗冲突指令与历史拒绝痕迹
+### 6.6 前置 directive 覆盖格式 + 清洗历史拒绝痕迹
 
-客户端 system 中可能含有与 prompt 注入格式冲突的指令，必须替换/移除；历史消息中的拒绝痕迹会诱导模型继续拒绝。
+与 §6.2 一致：**不删改客户端 system / tools 实质正文**。格式冲突优先靠**前置追加**的 directive + few-shot 覆盖输出约定，而不是改写客户端 system 里的身份或规则。
 
 实现要点：
-- 替换 `Use the provider-native tool-calling mechanism` 为 `Use the <tool_call> / json action format described above`。
-- 移除 `Do not include XML markup or examples` 等与我们输出格式冲突的禁令。
-- 把 `You must call at least one tool per assistant response` 改写成与注入格式兼容的措辞。
-- 对历史 assistant 消息，若检测到拒绝/身份声明痕迹，用第一个工具的占位参数生成一个 `<tool_call>` / `json action` 块替换，避免连锁拒绝。
+- 仅移除**明确垃圾元数据行**（计费/调试头、XML 声明等，与 `system_sanitizer.remove_junk_lines` 一致）。
+- 不把客户端 system 中的身份声明、能力描述、业务规则「优化」或替换成自己的措辞。
+- 对**历史 assistant** 消息（非客户端 system/tools）：若检测到拒绝/身份对抗痕迹，可用占位 tool call 块替换该条历史，避免连锁拒绝——这不属于删改 system/tools。
+- prompt 模式：directive 完整列出客户端 tools 的 name/description/parameters，禁止用精简假 schema 替代。
 
 ## 七、测试要点
 

@@ -22,7 +22,7 @@
 3. 在网页发一条测试对话（如 "hi"）。
 4. `chrome-devtools:get_network_request` 取关键的「发送消息」请求（通常 POST，返回 SSE/JSON 流）。
 5. 必要时 `chrome-devtools:evaluate_script` 取 `localStorage`/`sessionStorage`/cookie/页面变量里的 token。
-6. 如需图片上传，再发一条带图消息，抓上传请求。
+6. 如支持图片/文件，再发一条带附件消息，抓上传请求；**若抓到上传接口，第 5 步必须实现 upload**（见 `upstream-adapters.md`）。
 
 `context7` 查上游相关库/协议文档辅助理解（如 GraphQL schema、SSE 规范）。
 

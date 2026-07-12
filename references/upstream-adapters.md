@@ -52,12 +52,19 @@ async def get_auth(self) -> dict[str, str]:
 
 ## 四、多模态上传（两种范式）
 
+**条件强制**（SKILL.md 第 2 节第 11 条）：
+
+| 抓包结果 | 要求 |
+|---|---|
+| 发现 upload / attachment / presigned / base64 文件字段 | **必须**实现 `upload_image` / `upload_file`（或等价），并在对话请求体中引用返回的 id/url |
+| 全程无上传相关接口 | 文档写明「本上游不支持多模态上传」；可保留 stub 返回明确错误 |
+
 | 范式 | 说明 | 适用 |
 |---|---|---|
 | **JSON + base64 单步** | 文件内容 base64 后塞进请求体 JSON 字段，一次 POST 上传拿引用 id；轻量、无 multipart | 小文件/图片，如 grok.com |
 | **对象存储 presigned 三步** | ① POST 拿 presigned upload_url + file_id → ② PUT 到对象存储（如 Azure Blob）→ ③ POST 确认上传完成；返回 file_id 供后续对话引用 | ChatGPT 系 |
 
-`upload_image`/`upload_file` 返回上游引用（url/id），在 `stream()` 的请求体里引用它（如 `fileAttachments`/`attachment`）。详见 `references/capture-flow.md` 抓包确认上传方式。
+`upload_image`/`upload_file` 返回上游引用（url/id），在 `stream()` 的请求体里引用它（如 `fileAttachments`/`attachment`）。详见 `references/capture-flow.md`。
 
 ## 五、模型探测（勿硬编码）
 
@@ -79,12 +86,18 @@ async def get_auth(self) -> dict[str, str]:
 
 - 上游支持原生 function-calling → `settings.upstream_strategy = "native"`，client 直接产 `IREvent(kind="tool")`。
 - 上游不支持 → `settings.upstream_strategy = "prompt"`，靠 prompt 注入解析（见 `references/tool-calls.md`）。
+- 无论哪种：**对外 API 面**仍须接受 `tools` 并返回标准 tool 帧。
 
-## 七、错误分类换号（见 `references/auth-and-errors.md`）
+## 七、reasoning / thinking 事件
+
+- **入站**：history 中的 `reasoning_content`、Anthropic `thinking` block、Responses `reasoning` block 等，经 `extract_user_prompt` / `flatten_text` 进入上游上下文，**不得丢弃**。
+- **出站**：上游 SSE/事件若含思维链，`parser.py` **必须**产出 `IREvent(kind="thinking")`，由 adapter 映射到各协议字段；禁止只解析 text。
+
+## 八、错误分类换号（见 `references/auth-and-errors.md`）
 
 `app/deps.py:classify_failure` 把上游异常映射成 `FailReason`。按目标站定制 body 关键词列表（`_AUTH_HINTS`/`_BAN_HINTS`/`_QUOTA_HINTS`/`_CF_HINTS`），避免误判。
 
-## 八、参考实现
+## 九、参考实现
 
 - PromptQL 上游完整实现：`/data1/promptql2api/app/promptql/`（auth.py/client.py/events.py 三件套）。
 - grok2api/gpt2api/cursor2api 上游适配：见各项目源码（不同协议/认证/上传范式）。

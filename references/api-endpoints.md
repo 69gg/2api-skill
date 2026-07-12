@@ -1,6 +1,18 @@
 # API 端点规范
 
-> 实现四套 API + admin 端点时，对照本文确认字段与流式帧格式。骨架已实现，详见 `app/adapters/`。
+> 实现 `/v1` + admin 端点时，对照本文确认字段与流式帧格式。骨架已实现，详见 `app/adapters/`。
+> 路由是否生成由 `copy_skeleton` 开关决定；**已启用的路由**须满足下列「API 面必须」项。
+
+## 必须 vs 可选（API 面）
+
+| 能力 | 要求 |
+|---|---|
+| `stream=true` / `stream=false` | **必须**（启用的 chat/responses/messages 路由） |
+| 请求含 `tools` 时返回标准 tool_calls / tool_use / function_call | **必须**（不得以上游无原生 FC 为由删除） |
+| 客户端 reasoning / thinking 相关入参进入上游上下文 | **必须**透传实质内容（见 adapters `extract_user_prompt`） |
+| 上游思维链映射到 `reasoning_content` / thinking block 等 | 上游有则 **必须** 解析输出 |
+| 多模态上传 | 抓包有接口则 **必须**；否则文档声明不支持 |
+| admin 五端点 | 仅当 `--with-admin` |
 
 ## 一、/v1/models
 

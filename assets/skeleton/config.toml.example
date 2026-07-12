@@ -15,7 +15,7 @@ poll_interval = 1.2          # 轮询式上游的轮询间隔（秒）
 token_refresh_margin = 300   # 凭据到期前多少秒主动刷新
 tool_call_retries = 3        # prompt 模式被拒绝时换变体重试次数（0 = 不重试）
 strategy = "prompt"          # tool 策略：prompt（注入解析，默认）/ native（上游原生 function-calling 直通）
-# 目标网站专属端点（按抓包结果填，见 references/upstream-adapters.md 与 capture-flow.md）
+# 目标网站专属端点（按抓包结果填）
 chat_url = ""                # 上游「发送对话」端点
 
 # 可恢复失效（额度耗尽 / 人机验证）的冷却配置
@@ -25,33 +25,42 @@ cooldown_seconds = 600.0               # 默认冷却时长（秒）
 # cooldown_seconds_quota = 3600.0      # QUOTA_EXHAUSTED 覆盖值（可选）
 # cooldown_seconds_cf = 300.0          # CF_CHALLENGE 覆盖值（可选）
 
-# 注册机原生透传 [upstream] 段，可直接在 registrar/pipeline.py 读取
+# 注册机可透传 [upstream] 段自定义字段，在 registrar/pipeline.py 读取
 # supabase_url = "https://<project>.supabase.co"
 # supabase_anon_key = "<anon/public key from JS bundle>"
 
 # ===== 账号目录（主程序 + 注册机读）=====
 [registry]
 account_dir = "account"           # 账号凭据目录（account/<name>.json，已 gitignore）
+# FEATURE:registrar
 target_account_count = 0          # 0=关闭；>0 时服务运行时自动补足账号到目标数
 auto_register_interval = 300.0    # 自动补账号检查间隔（秒）
 auto_register_workers = 1         # 单次并发注册数
+# /FEATURE:registrar
 
+# FEATURE:admin
 # ===== 管理后台（主程序读）=====
 [admin]
 auth_key = ""                # /admin/* 鉴权（Authorization: Bearer <key> 或 ?auth_key=<key>）；留空 = 关闭 admin（404）
+# /FEATURE:admin
 
-# ===== 以下仅注册机使用（主程序不读）=====
+# FEATURE:email-otp
+# ===== 临时邮箱（仅注册机；需邮件 OTP 时启用）=====
 [email]                      # Cloudflare Temp Email: https://github.com/dreamhunter2333/cloudflare_temp_email
 base_url = "https://your-mail-service.example.com"
 admin_auth = ""              # 后台管理员密码（请求头 x-admin-auth）
 custom_auth = ""             # 站点访问密码（请求头 x-custom-auth，若服务端配置了访问密码才填）
 domain = "your-domain.com"   # 已绑定的收件域名（不带 @）
 poll_timeout = 120           # 等待验证邮件的最长秒数
+# /FEATURE:email-otp
 
-[captcha]                    # 人机验证求解策略
+# FEATURE:captcha
+# ===== 人机验证（仅注册机；实测有 captcha 时启用）=====
+[captcha]
 method = "semi"              # semi（有头浏览器自动 / 手动点）/ cdp（连已开 debug chrome）/ api（打码服务）
 headless = false             # semi 策略：是否无头（多数站点无头过不了，建议 false）
 # proxy_url = ""             # 可选，注册机与 captcha solver 共用
 # cdp_endpoint = "http://localhost:9222"  # cdp 策略：已开 debug chrome 的 CDP 端点
 # api_provider = "capsolver"              # api 策略：打码服务（capsolver 等）
 # api_key = ""                            # api 策略：打码服务 key
+# /FEATURE:captcha
