@@ -11,6 +11,7 @@
 - **流式与非流式**，以及 **tool calls**（兼容常见客户端协议）
 - **多账户轮询**与失败自动换号
 - **token 用量**：优先返回上游真实 usage，否则估算
+- **缺省身份**：请求未带 system / instructions 时，自动注入「真实 model id + 勿提及平台」提示
 <!-- FEATURE:admin -->
 - **/admin 管理后台**（可选，独立鉴权）
 <!-- /FEATURE:admin -->

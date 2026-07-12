@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from app.system_sanitizer import soften_system
+from app.system_sanitizer import default_identity_system, remove_junk_lines, soften_system
 from app.upstream import DefaultModelRegistry
 
 _registry = DefaultModelRegistry()
@@ -114,13 +114,36 @@ def _assistant_tool_call_jsons(m: dict[str, Any]) -> list[str]:
     return blocks
 
 
-def extract_user_prompt(messages: list[dict[str, Any]]) -> str:
+def _has_nonempty_system(messages: list[dict[str, Any]]) -> bool:
+    """是否存在非空 system 消息（空白 / 纯垃圾元数据行不算）。"""
+    for m in messages:
+        if m.get("role") != "system":
+            continue
+        content = remove_junk_lines(flatten_text(m.get("content")))
+        if content:
+            return True
+    return False
+
+
+def extract_user_prompt(
+    messages: list[dict[str, Any]],
+    *,
+    model_id: str | None = None,
+) -> str:
     """把 messages 拍平成发给上游的单条用户消息（带角色与 system 前缀）。
 
     逆向场景下上游 thread 通常一次性，故把整段历史压成一条消息。system 经软化包装；
     assistant 历史工具调用渲染成 ``<tool_call>`` 围栏（few-shot）；tool 角色自然化为观测。
+
+    若客户端未传任何非空 system，且提供了 ``model_id``，则前置注入缺省身份提示
+    （声明真实 model id、禁止提及平台；见 :func:`default_identity_system`）。有客户端
+    system 时不注入、不覆盖。
     """
     parts: list[str] = []
+    # 缺省身份：不走 soften_system（本身不是客户端硬 system，无需弱化）
+    if model_id and not _has_nonempty_system(messages):
+        parts.append(default_identity_system(model_id=model_id))
+
     for m in messages:
         role = m.get("role", "user")
         reasoning = m.get("reasoning_content")  # OpenAI 风格 CoT
@@ -128,7 +151,10 @@ def extract_user_prompt(messages: list[dict[str, Any]]) -> str:
 
         if role == "system":
             content = flatten_text(m.get("content"))
-            parts.append(f"{cot_prefix}{soften_system(content, lang=_lang_of(content))}")
+            softened = soften_system(content, lang=_lang_of(content))
+            if not softened:
+                continue  # 空 / 纯垃圾 system 不写入（避免占位空段）
+            parts.append(f"{cot_prefix}{softened}")
         elif role == "assistant":
             body = flatten_text(m.get("content"))
             tc_jsons = _assistant_tool_call_jsons(m)

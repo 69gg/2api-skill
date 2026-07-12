@@ -83,7 +83,7 @@ class IREvent:
 客户端 POST /v1/chat/completions
   → verify_api_key (v1 key 校验，空则放行)
   → get_client (round-robin 取号 → _RetryingClient 包装)
-  → adapter._build_prompt: extract_user_prompt(messages)  # 拍平成单条 prompt
+  → adapter._build_prompt: extract_user_prompt(messages, model_id=)  # 拍平；无 system 时注入缺省身份
   → orchestrator.stream_with_retry(client, prompt, tools)
       ├─ build_tool_directive(tools)        # prompt 模式注入指令；native 不注入
       ├─ client.stream(prompt, model_id)     # 上游请求 → IREvent 流
@@ -96,6 +96,7 @@ class IREvent:
 ## 五、可插拔接口（核心解耦点）
 
 - **adapter 层**：`extract_user_prompt` 把 messages 拍平成单条 prompt（system **软化包装但不删改实质** + assistant 历史 tool_call 渲染成围栏 few-shot）；`flatten_text` 把 content block → 纯文本并**保留** thinking/reasoning。客户端 tools 定义完整进入 prompt/native 路径。
+- **缺省身份 system**（`app/system_sanitizer.default_identity_system`）：当客户端**未**传任何非空 system / instructions 时，`extract_user_prompt(..., model_id=)` 前置注入一段短英文提示——声明对外 catalog model id，并禁止模型提及/暴露 webchat 平台名（`PLATFORM_NAME`，由 `copy_skeleton` 替换 `{{Platform}}`）。有客户端 system 时**不注入、不覆盖**。
 - **orchestrator**：duck-type client，不依赖具体上游（`stream(prompt, model_id)`）。
 - **deps**：`_RetryingClient` 捕获失效 → `classify_failure` → `FailReason` → `mark_failed`，换号对外透明。
 - **换上游时只需改 `app/upstream/`**（其余 config/account/IREvent/orchestrator/adapters/admin/tools/tokens/streaming 不变）。

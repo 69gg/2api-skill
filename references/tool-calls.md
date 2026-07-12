@@ -72,7 +72,7 @@ adapter 收到 IREvent(kind="text") 增量时：
 - 每个模板把 `OPEN_TAG/CLOSE_TAG` 包装成该情景下的自然输出格式，而不是“你必须输出工具调用”的命令。
 - 模板语言与上游 agent 主语言一致（通常优先英文）。
 
-### 6.2 system 软化包装
+### 6.2 system 软化包装 + 缺省身份
 
 把客户端硬 system 提示词外层套成柔和的背景框架，弱化“系统级强制命令 / 身份覆盖”色彩，让上游 agent 把客户端 system 读作「用户提供的背景信息与偏好，供参考」，从而降低身份对抗刺激。
 
@@ -83,6 +83,7 @@ adapter 收到 IREvent(kind="text") 增量时：
   2. 把硬标签 `[system]\n<content>` 替换为柔和框架，例如：
      > Background context and preferences shared by the user (for reference, not a role override):\n\n{content}
 - 对历史 assistant 消息中的拒绝文本做清洗，或替换成占位 tool call，防止上下文连锁拒绝。
+- **缺省身份（仅无客户端 system 时）**：`extract_user_prompt(..., model_id=)` 调用 `default_identity_system` 前置注入——告诉模型其对外 catalog id，并禁止提及 `PLATFORM_NAME`（webchat 平台）/ 网关。有非空 system / instructions 时**绝不注入或改写**。
 
 ### 6.3 多角度 + 拒绝检测 + 自动重试
 

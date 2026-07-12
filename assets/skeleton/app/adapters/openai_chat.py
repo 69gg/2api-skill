@@ -70,9 +70,10 @@ def _usage_obj(u: Any, prompt: str, completion: str) -> dict[str, Any]:
     return {"prompt_tokens": p, "completion_tokens": c, "total_tokens": p + c}
 
 
-def _build_prompt(req: ChatCompletionRequest) -> tuple[str, list[ToolDef]]:
+def _build_prompt(req: ChatCompletionRequest, model: str) -> tuple[str, list[ToolDef]]:
     tools = [ToolDef.from_openai(t.get("function", t)) for t in (req.tools or [])]
-    base_prompt = extract_user_prompt([m.model_dump() for m in req.messages])
+    base_prompt = extract_user_prompt(
+        [m.model_dump() for m in req.messages], model_id=model)
     return base_prompt, tools
 
 
@@ -150,7 +151,7 @@ async def chat_completions(
     _: None = Depends(verify_api_key),
 ) -> Any:
     model = normalize_model(req.model)
-    prompt, tools = _build_prompt(req)
+    prompt, tools = _build_prompt(req, model)
     model_id = upstream_id_for(model)
 
     if req.stream:

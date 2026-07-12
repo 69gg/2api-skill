@@ -44,13 +44,13 @@ def _sse(event: str, data: dict) -> bytes:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n".encode()
 
 
-def _build_prompt(req: MessagesRequest) -> tuple[str, list[ToolDef]]:
+def _build_prompt(req: MessagesRequest, model: str) -> tuple[str, list[ToolDef]]:
     tools = [ToolDef.from_anthropic(t) for t in (req.tools or [])]
     msgs = [m.model_dump() for m in req.messages]
     if req.system is not None:
         sys_text = req.system if isinstance(req.system, str) else json.dumps(req.system, ensure_ascii=False)
         msgs = [{"role": "system", "content": sys_text}, *msgs]
-    base_prompt = extract_user_prompt(msgs)
+    base_prompt = extract_user_prompt(msgs, model_id=model)
     return base_prompt, tools
 
 
@@ -208,7 +208,7 @@ async def messages(
     _: None = Depends(verify_api_key),
 ) -> Any:
     model = normalize_model(req.model)
-    prompt, tools = _build_prompt(req)
+    prompt, tools = _build_prompt(req, model)
     model_id = upstream_id_for(model)
 
     if req.stream:
@@ -244,5 +244,6 @@ async def messages(
 @router.post("/v1/messages/count_tokens")
 async def count_tokens(req: MessagesRequest, _: None = Depends(verify_api_key)) -> dict:
     """token 计数（用估算，因为不调用上游）。"""
-    prompt, _ = _build_prompt(req)
+    model = normalize_model(req.model)
+    prompt, _ = _build_prompt(req, model)
     return {"input_tokens": estimate_tokens(prompt)}

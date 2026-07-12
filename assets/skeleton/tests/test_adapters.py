@@ -329,3 +329,71 @@ def test_extract_user_prompt_preserves_reasoning():
     ])
     assert "内部推理" in prompt2
     assert "<thinking>" in prompt2
+
+
+def test_extract_user_prompt_default_identity_when_no_system():
+    """无 system 时注入缺省身份：真实 model id + 禁止提及平台。"""
+    from app.adapters import extract_user_prompt
+    from app.system_sanitizer import PLATFORM_NAME, default_identity_system
+
+    prompt = extract_user_prompt(
+        [{"role": "user", "content": "hi"}],
+        model_id="claude-sonnet-4",
+    )
+    assert "`claude-sonnet-4`" in prompt
+    assert "Do not mention" in prompt
+    assert PLATFORM_NAME in prompt or "host platform" in prompt
+    assert "[user]\nhi" in prompt
+    # 缺省身份应位于用户消息之前
+    assert prompt.index("claude-sonnet-4") < prompt.index("[user]")
+    # 与模板一致
+    assert default_identity_system("claude-sonnet-4") in prompt
+
+
+def test_extract_user_prompt_no_default_when_system_present():
+    """有客户端 system 时不注入缺省身份，且不覆盖实质指令。"""
+    from app.adapters import extract_user_prompt
+
+    prompt = extract_user_prompt(
+        [
+            {"role": "system", "content": "你是一个简洁的助手。"},
+            {"role": "user", "content": "hi"},
+        ],
+        model_id="claude-sonnet-4",
+    )
+    assert "你是一个简洁的助手" in prompt
+    assert "Do not mention" not in prompt
+    assert "`claude-sonnet-4`" not in prompt
+
+
+def test_extract_user_prompt_empty_system_gets_default():
+    """空 system / 纯空白 / 纯垃圾元数据行视为无 system，仍注入缺省身份。"""
+    from app.adapters import extract_user_prompt
+
+    for sys_content in ("   ", "x-anthropic-billing-header: secret\n"):
+        prompt = extract_user_prompt(
+            [
+                {"role": "system", "content": sys_content},
+                {"role": "user", "content": "hi"},
+            ],
+            model_id="gpt-4o",
+        )
+        assert "`gpt-4o`" in prompt, repr(sys_content)
+        assert "Do not mention" in prompt, repr(sys_content)
+
+
+def test_chat_injects_default_identity_into_upstream_prompt(app, text_provider):
+    """端到端：无 system 的 chat 请求，上游 prompt 含 model id 与平台禁言。"""
+    _override(app, text_provider)
+    with TestClient(app) as client:
+        r = client.post(
+            "/v1/chat/completions",
+            json={"model": "x", "messages": [{"role": "user", "content": "hi"}]},
+        )
+    assert r.status_code == 200
+    # 未知 model 归一化为 DEFAULT_MODEL
+    from app.upstream.models import DEFAULT_MODEL
+
+    assert text_provider.captured_prompt is not None
+    assert f"`{DEFAULT_MODEL}`" in text_provider.captured_prompt
+    assert "Do not mention" in text_provider.captured_prompt

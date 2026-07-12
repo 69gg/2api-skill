@@ -65,10 +65,10 @@ def _input_to_messages(inp: Any, instructions: str | None) -> list[dict[str, Any
     return msgs
 
 
-def _build_prompt(req: ResponsesRequest) -> tuple[str, list[ToolDef]]:
+def _build_prompt(req: ResponsesRequest, model: str) -> tuple[str, list[ToolDef]]:
     tools = [ToolDef.from_openai(t.get("function", t)) for t in (req.tools or [])]
     msgs = _input_to_messages(req.input, req.instructions)
-    base_prompt = extract_user_prompt(msgs)
+    base_prompt = extract_user_prompt(msgs, model_id=model)
     return base_prompt, tools
 
 
@@ -259,7 +259,7 @@ async def responses(
     _: None = Depends(verify_api_key),
 ) -> Any:
     model = normalize_model(req.model)
-    prompt, tools = _build_prompt(req)
+    prompt, tools = _build_prompt(req, model)
     model_id = upstream_id_for(model)
 
     if req.stream:
